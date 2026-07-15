@@ -2,10 +2,10 @@
 // Solo hace CRUD sobre la tabla `usuarios` + cifra la contraseña antes de
 // guardarla. El login real contra INTRALU y el chequeo de notas viven en
 // check-all-users.js (Node, corrido por GitHub Actions) — así la lógica de
-// scraping existe en un solo lugar, ya probada contra el sitio real.
+// scraping existe en un solo lugar, ya probada contra el sitio real. El
+// cálculo de fórmulas para /simular vive en docs/simulador.html (Mini App).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { encrypt } from './crypto.ts';
-import { evaluarFormula, minimoParaAprobar } from './formula.ts';
 
 const TELEGRAM_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!;
 const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET')!;
@@ -14,9 +14,11 @@ const ENCRYPTION_KEY = Deno.env.get('CREDENTIALS_ENCRYPTION_KEY')!;
 // en toda Edge Function, no hace falta configurarlos a mano.
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-// Página estática en GitHub Pages (Supabase Edge Functions no puede servir
-// HTML en el plan gratis). El formulario le pega a registro-webapp por API.
-const REGISTRO_WEBAPP_URL = 'https://alexis0800.github.io/uni-notas-watcher/registro.html';
+// Páginas estáticas en GitHub Pages (Supabase Edge Functions no puede
+// servir HTML en el plan gratis).
+const PAGES_BASE = 'https://alexis0800.github.io/uni-notas-watcher';
+const REGISTRO_WEBAPP_URL = `${PAGES_BASE}/registro.html`;
+const SIMULADOR_URL = `${PAGES_BASE}/simulador.html`;
 const NOTA_APROBATORIA = 10;
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
@@ -58,7 +60,7 @@ const AYUDA = `Notificador de notas UNI (INTRALU)
 Comandos:
 /registrar — registra o actualiza tu usuario de INTRALU (abre un formulario)
 /notas — muestra todas tus notas registradas hasta ahora
-/simular — calcula qué necesitas en el Examen Final para aprobar
+/simular — simula tu nota final de un curso con las evaluaciones que aún faltan
 /estado — ve si estás activo y cuándo se revisó por última vez
 /baja — borra tu registro y tu contraseña
 /ayuda — este mensaje
@@ -67,11 +69,11 @@ Tu contraseña se guarda cifrada, nunca en texto plano. El formulario de
 registro no la deja como mensaje de texto en este chat.`;
 
 type Evaluacion = { curso: string; descripcion: string; nota: number | null; valor: string; anulada: boolean };
+type EvaluacionCurso = { variable: string; descripcion: string; nota: number | null; anulada: boolean; fecha: string | null };
 type CursoMeta = {
   nombre: string;
   formulas: { practicas: string | null; teoria: string | null } | null;
-  // deno-lint-ignore no-explicit-any
-  promedios: any;
+  evaluaciones: EvaluacionCurso[];
 };
 
 // 🟢 si el valor es un número >= 10, 🔴 en cualquier otro caso (desaprobado,
@@ -108,33 +110,19 @@ function formatearFecha(iso: string): string {
   }
 }
 
-// El "key" de cada evaluación en last_grades es "codper:codcur-seccion:camnot".
-function variableDeKey(key: string): string {
-  const camnot = Number(key.split(':')[2]);
-  if (camnot === 13) return 'EP';
-  if (camnot === 14) return 'EF';
-  if (camnot === 15) return 'ES';
-  return `N${camnot}`;
+function formulaUsaVariable(formulas: CursoMeta['formulas'], variable: string): boolean {
+  const re = new RegExp(`\\b${variable}\\b`, 'i');
+  return Boolean((formulas?.practicas && re.test(formulas.practicas)) || (formulas?.teoria && re.test(formulas.teoria)));
 }
 
-function construirVariables(
-  lastGrades: Record<string, Evaluacion>,
-  cursoKey: string,
-): { vars: Record<string, number>; faltantes: string[] } {
-  const vars: Record<string, number> = {};
-  const faltantes: string[] = [];
-  for (const [key, ev] of Object.entries(lastGrades)) {
-    if (key.split(':')[1] !== cursoKey) continue;
-    const variable = variableDeKey(key);
-    if (ev.anulada) {
-      vars[variable] = 0; // anulada cuenta como 0 para la fórmula
-    } else if (ev.nota === null) {
-      faltantes.push(variable);
-    } else {
-      vars[variable] = ev.nota;
-    }
-  }
-  return { vars, faltantes };
+// Un curso es "simulable" si tiene alguna evaluación sin fecha de registro
+// (todavía no rendida) que la fórmula del curso efectivamente use.
+function tienePendientes(meta: CursoMeta): boolean {
+  return meta.evaluaciones.some((ev) => !ev.fecha && formulaUsaVariable(meta.formulas, ev.variable));
+}
+
+function botonSimular(codcur: string) {
+  return { inline_keyboard: [[{ text: '📐 Abrir simulador', web_app: { url: `${SIMULADOR_URL}?curso=${codcur}` } }]] };
 }
 
 Deno.serve(async (req) => {
@@ -227,80 +215,32 @@ Deno.serve(async (req) => {
   } else if (text.startsWith('/simular')) {
     const partes = text.split(/\s+/).filter(Boolean);
     const codcurArg = partes[1]?.toUpperCase();
-    const valorArg = partes[2] !== undefined ? Number(partes[2]) : undefined;
 
     const { data } = await supabase.from('usuarios').select('*').eq('chat_id', chatId).maybeSingle();
-    const cursos = (data?.cursos ?? {}) as Record<string, CursoMeta>;
-    const lastGrades = (data?.last_grades ?? {}) as Record<string, Evaluacion>;
-
     if (!data) {
       await sendMessage(chatId, 'No estás registrado.', botonRegistrar());
-    } else if (!codcurArg) {
-      const lineas: string[] = [];
-      for (const [cursoKey, meta] of Object.entries(cursos)) {
-        if (!meta.formulas?.teoria || !meta.formulas.teoria.toUpperCase().includes('EF')) continue;
-        const codcur = cursoKey.split('-')[0];
-        const { faltantes } = construirVariables(lastGrades, cursoKey);
-        const soloFaltaEF = faltantes.length === 1 && faltantes[0] === 'EF';
-        if (soloFaltaEF) lineas.push(`• ${codcur} — ${meta.nombre}: /simular ${codcur} [NOTA]`);
-        else if (faltantes.length > 0) lineas.push(`• ${codcur} — ${meta.nombre}: faltan ${faltantes.join(', ')}`);
-      }
-      if (lineas.length === 0) {
-        await sendMessage(chatId, 'No tengo cursos con Examen Final pendiente para simular todavía.');
-      } else {
-        await sendMessage(
-          chatId,
-          `Uso: /simular CODIGO_CURSO [NOTA]\n(sin NOTA te digo el mínimo que necesitas)\n\n${lineas.join('\n')}`,
-        );
-      }
     } else {
-      const cursoKey = Object.keys(cursos).find((k) => k.startsWith(`${codcurArg}-`));
-      const meta = cursoKey ? cursos[cursoKey] : null;
+      const cursos = (data.cursos ?? {}) as Record<string, CursoMeta>;
+      const simulables = Object.entries(cursos).filter(([, meta]) => tienePendientes(meta));
 
-      if (!cursoKey || !meta) {
-        await sendMessage(chatId, `No encontré el curso "${codcurArg}". Escribe /simular sin argumentos para ver la lista.`);
-      } else if (!meta.formulas?.teoria || !meta.formulas.teoria.toUpperCase().includes('EF')) {
-        await sendMessage(chatId, `${meta.nombre} no tiene Examen Final en su fórmula, no hay nada que simular.`);
-      } else {
-        const { vars, faltantes } = construirVariables(lastGrades, cursoKey);
-        const faltantesSinEF = faltantes.filter((f) => f !== 'EF');
-
-        if (faltantesSinEF.length > 0) {
-          await sendMessage(chatId, `Todavía faltan notas de ${meta.nombre} para poder simular: ${faltantesSinEF.join(', ')}.`);
+      if (codcurArg) {
+        const encontrado = simulables.find(([key]) => key.startsWith(`${codcurArg}-`));
+        if (!encontrado) {
+          await sendMessage(
+            chatId,
+            `No encontré "${codcurArg}" con notas pendientes para simular. Escribe /simular sin argumentos para ver la lista.`,
+          );
         } else {
-          try {
-            if (meta.formulas.practicas) vars.PP = evaluarFormula(meta.formulas.practicas, vars);
-
-            if (valorArg !== undefined) {
-              if (Number.isNaN(valorArg) || valorArg < 0 || valorArg > 20) {
-                await sendMessage(chatId, 'La nota tiene que ser un número entre 0 y 20.');
-              } else {
-                const final = evaluarFormula(meta.formulas.teoria, { ...vars, EF: valorArg });
-                const aprueba = final >= NOTA_APROBATORIA;
-                await sendMessage(
-                  chatId,
-                  `📐 <b>${meta.nombre}</b>\nSi sacas <b>${valorArg}</b> en el Examen Final, tu nota final sería ` +
-                    `aproximadamente <b>${final.toFixed(2)}</b> ${aprueba ? '🟢 (aprobarías)' : '🔴 (no alcanzaría)'}.\n\n` +
-                    `<i>Cálculo aproximado con la fórmula de INTRALU, puede diferir un poco por redondeos del sistema.</i>`,
-                );
-              }
-            } else {
-              const sim = minimoParaAprobar(meta.formulas.teoria, vars, 'EF', NOTA_APROBATORIA);
-              let texto: string;
-              if (sim.yaAprobado) {
-                texto = `🟢 Con lo que ya tienes en <b>${meta.nombre}</b>, apruebas pase lo que pase en el Examen Final.`;
-              } else if (sim.alcanza) {
-                texto = `📐 <b>${meta.nombre}</b>: necesitas al menos <b>${sim.minimo}</b> en el Examen Final para aprobar (aproximado).`;
-              } else {
-                texto = `🔴 <b>${meta.nombre}</b>: ni sacando 20 en el Examen Final alcanzas a aprobar (aproximado).`;
-              }
-              await sendMessage(chatId, texto);
-            }
-          } catch (err) {
-            console.error(err);
-            await sendMessage(chatId, 'No pude calcular la fórmula de ese curso.');
-          }
+          const [, meta] = encontrado;
+          await sendMessage(chatId, `📐 ${meta.nombre}`, botonSimular(codcurArg));
         }
+      } else if (simulables.length === 0) {
+        await sendMessage(chatId, 'No tengo cursos con notas pendientes para simular todavía.');
+      } else {
+        const botones = simulables.map(([key, meta]) => [
+          { text: meta.nombre, web_app: { url: `${SIMULADOR_URL}?curso=${key.split('-')[0]}` } },
+        ]);
+        await sendMessage(chatId, '📐 Elige un curso para simular:', { inline_keyboard: botones });
       }
     }
   } else {

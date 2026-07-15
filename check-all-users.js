@@ -53,11 +53,26 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
     for (const curso of cursos) {
       const { evaluaciones, formulas, promedios } = await fetchEvaluaciones(client, csrfToken, { codper, ...curso });
       const cursoKey = `${curso.codcur}-${curso.seccion}`;
-      cursosMeta[cursoKey] = { nombre: curso.nombre, formulas, promedios };
+      // Lista completa (con y sin fecha) para el simulador: las que ya
+      // tienen fecha quedan fijas, las que no, son las editables ahí.
+      cursosMeta[cursoKey] = {
+        nombre: curso.nombre,
+        formulas,
+        promedios,
+        evaluaciones: evaluaciones.map((ev) => ({
+          variable: ev.variable,
+          descripcion: ev.descripcion,
+          nota: ev.nota,
+          anulada: ev.anulada,
+          valor: ev.fecha ? formatearNota(ev) : null,
+          fecha: ev.fecha,
+        })),
+      };
 
       for (const ev of evaluaciones) {
         // Solo evaluaciones con fecha de registro: descarta los casilleros
-        // vacíos (ej. "Examen Sustitutorio" que nunca se rindió).
+        // vacíos (ej. "Examen Sustitutorio" que nunca se rindió) de las
+        // notificaciones y de /notas.
         if (!ev.fecha) continue;
         const key = `${codper}:${cursoKey}:${ev.camnot}`;
         currentMap[key] = {

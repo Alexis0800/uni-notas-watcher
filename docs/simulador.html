@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Simulador de notas</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0;
+    padding: 24px 20px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--tg-theme-bg-color, #ffffff);
+    color: var(--tg-theme-text-color, #111111);
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 24px 0 8px; color: var(--tg-theme-hint-color, #888888); }
+  p.hint {
+    font-size: 13px;
+    color: var(--tg-theme-hint-color, #888888);
+    margin: 0 0 8px;
+    line-height: 1.4;
+  }
+  .fila {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: var(--tg-theme-secondary-bg-color, #f2f2f2);
+    margin-bottom: 6px;
+    font-size: 14px;
+  }
+  .fila input {
+    width: 70px;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    font-size: 15px;
+    border-radius: 8px;
+    border: 1px solid var(--tg-theme-hint-color, #cccccc);
+    background: var(--tg-theme-bg-color, #ffffff);
+    color: var(--tg-theme-text-color, #111111);
+    text-align: center;
+  }
+  .badge { font-weight: 600; }
+  #resultado {
+    margin-top: 24px;
+    padding: 16px;
+    border-radius: 12px;
+    background: var(--tg-theme-secondary-bg-color, #f2f2f2);
+    font-size: 15px;
+    text-align: center;
+    min-height: 20px;
+  }
+  #resultado .nota { font-size: 28px; font-weight: 700; display: block; margin-bottom: 4px; }
+  .verde { color: #1e9e50; }
+  .rojo { color: #d64545; }
+  #error { color: #d64545; font-size: 14px; margin-top: 16px; }
+</style>
+</head>
+<body>
+  <h1 id="titulo">Simulador</h1>
+  <p class="hint" id="subtitulo"></p>
+
+  <div id="contenido"></div>
+  <div id="resultado"></div>
+  <div id="error"></div>
+
+  <script>
+    const API_URL = 'https://dfitaqdfkcxeroisjeic.supabase.co/functions/v1/simular-datos';
+    const NOTA_APROBATORIA = 10;
+
+    // --- Evaluador de fórmulas (mismo algoritmo que el del bot, copiado
+    // porque esta página corre sola en el navegador) ---
+    function normalizar(expr) {
+      return expr.replace(/(\d)\s*\.\s*([A-Za-z])/g, '$1*$2');
+    }
+    function tokenize(expr) {
+      const tokens = [];
+      let i = 0;
+      const s = normalizar(expr);
+      while (i < s.length) {
+        const c = s[i];
+        if (/\s/.test(c)) { i++; continue; }
+        if ('+-*/(),'.includes(c)) { tokens.push(c); i++; continue; }
+        if (/[0-9.]/.test(c)) {
+          let j = i;
+          while (j < s.length && /[0-9.]/.test(s[j])) j++;
+          tokens.push(s.slice(i, j)); i = j; continue;
+        }
+        if (/[A-Za-z]/.test(c)) {
+          let j = i;
+          while (j < s.length && /[A-Za-z0-9]/.test(s[j])) j++;
+          tokens.push(s.slice(i, j)); i = j; continue;
+        }
+        throw new Error('Carácter inesperado en fórmula: ' + c);
+      }
+      return tokens;
+    }
+    function evaluarFormula(expr, vars) {
+      const tokens = tokenize(expr);
+      let pos = 0;
+      const peek = () => tokens[pos];
+      const next = () => tokens[pos++];
+      function parseExpr() {
+        let value = parseTerm();
+        while (peek() === '+' || peek() === '-') {
+          const op = next();
+          const rhs = parseTerm();
+          value = op === '+' ? value + rhs : value - rhs;
+        }
+        return value;
+      }
+      function parseTerm() {
+        let value = parseFactor();
+        while (peek() === '*' || peek() === '/') {
+          const op = next();
+          const rhs = parseFactor();
+          value = op === '*' ? value * rhs : value / rhs;
+        }
+        return value;
+      }
+      function parseFactor() {
+        const tok = peek();
+        if (tok === undefined) throw new Error('Fórmula incompleta');
+        if (tok === '-') { next(); return -parseFactor(); }
+        if (tok === '(') {
+          next();
+          const value = parseExpr();
+          if (next() !== ')') throw new Error('Falta paréntesis de cierre');
+          return value;
+        }
+        if (/^[A-Za-z]/.test(tok)) {
+          if (tok.toUpperCase() === 'MIN') {
+            next();
+            if (next() !== '(') throw new Error('Se esperaba "(" después de MIN');
+            const valores = [parseExpr()];
+            while (peek() === ',') { next(); valores.push(parseExpr()); }
+            if (next() !== ')') throw new Error('Falta paréntesis de cierre en MIN');
+            return Math.min(...valores);
+          }
+          next();
+          const key = tok.toUpperCase();
+          if (!(key in vars)) throw new Error('Variable desconocida: ' + tok);
+          return vars[key];
+        }
+        next();
+        const n = Number(tok);
+        if (Number.isNaN(n)) throw new Error('Token numérico inválido: ' + tok);
+        return n;
+      }
+      const resultado = parseExpr();
+      if (pos !== tokens.length) throw new Error('Fórmula mal formada');
+      return resultado;
+    }
+
+    // --- Página ---
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    const params = new URLSearchParams(location.search);
+    const curso = params.get('curso');
+
+    const contenidoEl = document.getElementById('contenido');
+    const resultadoEl = document.getElementById('resultado');
+    const errorEl = document.getElementById('error');
+    const tituloEl = document.getElementById('titulo');
+    const subtituloEl = document.getElementById('subtitulo');
+
+    function mostrarError(msg) {
+      errorEl.textContent = msg;
+    }
+
+    function limpiar(el) {
+      while (el.firstChild) el.removeChild(el.firstChild);
+    }
+
+    function crearFila(etiquetaTexto, nodoValor) {
+      const fila = document.createElement('div');
+      fila.className = 'fila';
+      const etiqueta = document.createElement('span');
+      etiqueta.textContent = etiquetaTexto;
+      fila.appendChild(etiqueta);
+      fila.appendChild(nodoValor);
+      return fila;
+    }
+
+    if (!curso) {
+      mostrarError('Falta indicar el curso. Abre este formulario desde /simular en el bot.');
+    } else {
+      fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData: tg.initData, curso }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (!data.ok) { mostrarError(data.error || 'No se pudo cargar.'); return; }
+          render(data);
+        })
+        .catch(() => mostrarError('Error de red, intenta de nuevo.'));
+    }
+
+    function render(data) {
+      tituloEl.textContent = data.nombre; // texto plano, sin HTML
+      subtituloEl.textContent = data.pending.length > 0
+        ? 'Las notas con fecha ya registrada quedan fijas. Completa las pendientes para simular tu nota final.'
+        : 'Todas tus notas de este curso ya están registradas.';
+
+      limpiar(contenidoEl);
+
+      if (data.locked.length > 0) {
+        const h2 = document.createElement('h2');
+        h2.textContent = 'Ya registradas';
+        contenidoEl.appendChild(h2);
+        for (const ev of data.locked) {
+          const badge = document.createElement('span');
+          badge.className = 'badge';
+          badge.textContent = ev.valor;
+          contenidoEl.appendChild(crearFila(ev.descripcion, badge));
+        }
+      }
+
+      const inputs = [];
+      if (data.pending.length > 0) {
+        const h2 = document.createElement('h2');
+        h2.textContent = 'Pendientes (simula tu nota)';
+        contenidoEl.appendChild(h2);
+        for (const ev of data.pending) {
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.min = '0';
+          input.max = '20';
+          input.step = '0.5';
+          input.placeholder = '0-20';
+          input.dataset.variable = ev.variable;
+          contenidoEl.appendChild(crearFila(ev.descripcion, input));
+          inputs.push(input);
+        }
+      }
+
+      inputs.forEach((input) => input.addEventListener('input', () => calcular(data, inputs)));
+      calcular(data, inputs);
+    }
+
+    function calcular(data, inputs) {
+      if (inputs.length === 0) {
+        calcularConVars(data, Object.assign({}, data.vars));
+        return;
+      }
+      const vars = Object.assign({}, data.vars);
+      for (const input of inputs) {
+        const val = input.value.trim();
+        if (val === '') { limpiar(resultadoEl); return; }
+        const n = Number(val);
+        if (Number.isNaN(n) || n < 0 || n > 20) { limpiar(resultadoEl); return; }
+        vars[input.dataset.variable] = n;
+      }
+      calcularConVars(data, vars);
+    }
+
+    function calcularConVars(data, vars) {
+      try {
+        if (data.formulas.practicas) vars.PP = evaluarFormula(data.formulas.practicas, vars);
+        const final = evaluarFormula(data.formulas.teoria, vars);
+        const aprueba = final >= NOTA_APROBATORIA;
+
+        limpiar(resultadoEl);
+        const notaSpan = document.createElement('span');
+        notaSpan.className = 'nota ' + (aprueba ? 'verde' : 'rojo');
+        notaSpan.textContent = final.toFixed(2);
+        const msgSpan = document.createElement('span');
+        msgSpan.textContent = (aprueba ? '✅ Aprobarías' : '❌ No alcanzaría') + ' (nota final aproximada)';
+        resultadoEl.appendChild(notaSpan);
+        resultadoEl.appendChild(msgSpan);
+      } catch (err) {
+        limpiar(resultadoEl);
+        mostrarError('No pude calcular: ' + err.message);
+      }
+    }
+  </script>
+</body>
+</html>
