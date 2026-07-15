@@ -2,6 +2,7 @@
   "name": "uni-notas-watcher",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Bot de Telegram multiusuario: revisa INTRALU (alumnos.uni.edu.pe) y avisa por Telegram cuando aparece una nota nueva.",
   "type": "commonjs",
   "engines": {
