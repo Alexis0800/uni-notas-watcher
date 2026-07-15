@@ -1,0 +1,5 @@
+node_modules/
+.env
+*-debug.html
+last-grade.json
+supabase/.temp/

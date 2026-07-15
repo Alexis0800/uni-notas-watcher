@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Registro INTRALU</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0;
+    padding: 24px 20px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--tg-theme-bg-color, #ffffff);
+    color: var(--tg-theme-text-color, #111111);
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.hint {
+    font-size: 13px;
+    color: var(--tg-theme-hint-color, #888888);
+    margin: 0 0 24px;
+    line-height: 1.4;
+  }
+  label {
+    display: block;
+    font-size: 13px;
+    color: var(--tg-theme-hint-color, #888888);
+    margin: 16px 0 6px;
+  }
+  input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 14px;
+    font-size: 16px;
+    border-radius: 10px;
+    border: 1px solid var(--tg-theme-hint-color, #cccccc);
+    background: var(--tg-theme-secondary-bg-color, #f2f2f2);
+    color: var(--tg-theme-text-color, #111111);
+  }
+  #status {
+    margin-top: 20px;
+    font-size: 14px;
+    min-height: 20px;
+  }
+  #status.error { color: #e05353; }
+  #status.ok { color: #34a853; }
+</style>
+</head>
+<body>
+  <h1>Registrar mi usuario de INTRALU</h1>
+  <p class="hint">
+    Tu contraseña se cifra al llegar al servidor y nunca queda como mensaje
+    de texto en el chat.
+  </p>
+
+  <form id="form">
+    <label for="codigo">Código UNI</label>
+    <input id="codigo" name="codigo" type="text" autocomplete="username" placeholder="20201234A" required />
+
+    <label for="password">Contraseña de INTRALU</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required />
+  </form>
+
+  <div id="status"></div>
+
+  <script>
+    const API_URL = 'https://dfitaqdfkcxeroisjeic.supabase.co/functions/v1/registro-webapp';
+
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    const form = document.getElementById('form');
+    const statusEl = document.getElementById('status');
+    const codigoEl = document.getElementById('codigo');
+    const passwordEl = document.getElementById('password');
+
+    function setStatus(text, kind) {
+      statusEl.textContent = text;
+      statusEl.className = kind || '';
+    }
+
+    function validar() {
+      return codigoEl.value.trim().length > 0 && passwordEl.value.length > 0;
+    }
+
+    async function enviar() {
+      if (!validar()) {
+        setStatus('Completa código y contraseña.', 'error');
+        return;
+      }
+      tg.MainButton.showProgress();
+      setStatus('Registrando...', '');
+      try {
+        const res = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            codigo: codigoEl.value.trim(),
+            password: passwordEl.value,
+            initData: tg.initData,
+          }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          setStatus('✅ Registrado. Puedes cerrar esta ventana.', 'ok');
+          tg.MainButton.hideProgress();
+          setTimeout(() => tg.close(), 1200);
+        } else {
+          setStatus('❌ ' + (data.error || 'No se pudo registrar.'), 'error');
+          tg.MainButton.hideProgress();
+        }
+      } catch (err) {
+        setStatus('❌ Error de red, intenta de nuevo.', 'error');
+        tg.MainButton.hideProgress();
+      }
+    }
+
+    tg.MainButton.setText('Registrarme');
+    tg.MainButton.show();
+    tg.MainButton.onClick(enviar);
+    form.addEventListener('submit', (e) => { e.preventDefault(); enviar(); });
+  </script>
+</body>
+</html>
