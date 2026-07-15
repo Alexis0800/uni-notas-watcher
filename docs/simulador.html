@@ -205,7 +205,7 @@
 
     function render(data) {
       tituloEl.textContent = data.nombre; // texto plano, sin HTML
-      subtituloEl.textContent = data.pending.length > 0
+      subtituloEl.textContent = data.pending.length > 0 || data.sustitutorio
         ? 'Las notas con fecha ya registrada quedan fijas. Completa las pendientes para simular tu nota final.'
         : 'Todas tus notas de este curso ya están registradas.';
 
@@ -241,15 +241,30 @@
         }
       }
 
-      inputs.forEach((input) => input.addEventListener('input', () => calcular(data, inputs)));
-      calcular(data, inputs);
+      let esInput = null;
+      if (data.sustitutorio) {
+        const h2 = document.createElement('h2');
+        h2.textContent = 'Examen Sustitutorio (opcional)';
+        contenidoEl.appendChild(h2);
+        const hint = document.createElement('p');
+        hint.className = 'hint';
+        hint.textContent = 'Si lo rindes, reemplaza tu peor nota entre Parcial y Final — solo si te conviene.';
+        contenidoEl.appendChild(hint);
+        esInput = document.createElement('input');
+        esInput.type = 'number';
+        esInput.min = '0';
+        esInput.max = '20';
+        esInput.step = '0.5';
+        esInput.placeholder = '0-20';
+        contenidoEl.appendChild(crearFila(data.sustitutorio.descripcion, esInput));
+        esInput.addEventListener('input', () => calcular(data, inputs, esInput));
+      }
+
+      inputs.forEach((input) => input.addEventListener('input', () => calcular(data, inputs, esInput)));
+      calcular(data, inputs, esInput);
     }
 
-    function calcular(data, inputs) {
-      if (inputs.length === 0) {
-        calcularConVars(data, Object.assign({}, data.vars));
-        return;
-      }
+    function calcular(data, inputs, esInput) {
       const vars = Object.assign({}, data.vars);
       for (const input of inputs) {
         const val = input.value.trim();
@@ -258,14 +273,28 @@
         if (Number.isNaN(n) || n < 0 || n > 20) { limpiar(resultadoEl); return; }
         vars[input.dataset.variable] = n;
       }
-      calcularConVars(data, vars);
+      let valorES = null;
+      if (esInput && esInput.value.trim() !== '') {
+        const n = Number(esInput.value.trim());
+        if (Number.isNaN(n) || n < 0 || n > 20) { limpiar(resultadoEl); return; }
+        valorES = n;
+      }
+      calcularConVars(data, vars, valorES);
     }
 
-    function calcularConVars(data, vars) {
+    function calcularConVars(data, vars, valorES) {
       try {
         if (data.formulas.practicas) vars.PP = evaluarFormula(data.formulas.practicas, vars);
         const final = evaluarFormula(data.formulas.teoria, vars);
         const aprueba = final >= NOTA_APROBATORIA;
+
+        let mejorConES = null;
+        if (valorES !== null && 'EP' in vars && 'EF' in vars) {
+          const conEPReemplazada = evaluarFormula(data.formulas.teoria, Object.assign({}, vars, { EP: valorES }));
+          const conEFReemplazada = evaluarFormula(data.formulas.teoria, Object.assign({}, vars, { EF: valorES }));
+          const mejor = Math.max(conEPReemplazada, conEFReemplazada);
+          if (mejor > final) mejorConES = mejor;
+        }
 
         limpiar(resultadoEl);
         const notaSpan = document.createElement('span');
@@ -275,6 +304,20 @@
         msgSpan.textContent = (aprueba ? '✅ Aprobarías' : '❌ No alcanzaría') + ' (nota final aproximada)';
         resultadoEl.appendChild(notaSpan);
         resultadoEl.appendChild(msgSpan);
+
+        if (mejorConES !== null) {
+          const mejorAprueba = mejorConES >= NOTA_APROBATORIA;
+          const br = document.createElement('br');
+          resultadoEl.appendChild(br);
+          const esSpan = document.createElement('span');
+          esSpan.className = 'nota ' + (mejorAprueba ? 'verde' : 'rojo');
+          esSpan.style.fontSize = '20px';
+          esSpan.textContent = mejorConES.toFixed(2);
+          const esMsg = document.createElement('span');
+          esMsg.textContent = ' rindiendo el Sustitutorio (te conviene)';
+          resultadoEl.appendChild(esSpan);
+          resultadoEl.appendChild(esMsg);
+        }
       } catch (err) {
         limpiar(resultadoEl);
         mostrarError('No pude calcular: ' + err.message);

@@ -127,13 +127,17 @@ function extraerVariables(formulas: CursoMeta['formulas']): string[] {
 }
 
 // Un curso es "simulable" si alguna variable que su fórmula necesita
-// todavía no tiene fecha de registro (o ni existe como evaluación aún).
+// todavía no tiene fecha de registro (o ni existe como evaluación aún), o
+// si el Examen Sustitutorio sigue disponible (no aparece en la fórmula,
+// es una regla aparte: reemplaza tu peor nota entre Parcial y Final).
 function tienePendientes(meta: CursoMeta): boolean {
   const evalPorVariable = new Map(meta.evaluaciones.map((ev) => [ev.variable.toUpperCase(), ev]));
-  return extraerVariables(meta.formulas).some((v) => {
+  const faltaDeFormula = extraerVariables(meta.formulas).some((v) => {
     const ev = evalPorVariable.get(v);
     return !ev || !ev.fecha;
   });
+  const es = evalPorVariable.get('ES');
+  return faltaDeFormula || Boolean(es && !es.fecha);
 }
 
 function botonSimular(codcur: string) {

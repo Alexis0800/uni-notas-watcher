@@ -107,5 +107,11 @@ Deno.serve(async (req) => {
     }
   }
 
-  return json({ ok: true, nombre: meta.nombre, formulas: meta.formulas, vars, locked, pending });
+  // El Examen Sustitutorio no aparece en las fórmulas de INTRALU (es una
+  // regla aparte): si lo rindes, reemplaza tu peor nota entre Parcial y
+  // Final, lo que más te convenga. Se ofrece por separado del resto.
+  const esEval = evalPorVariable.get('ES');
+  const sustitutorio = esEval && !esEval.fecha ? { variable: 'ES', descripcion: esEval.descripcion } : null;
+
+  return json({ ok: true, nombre: meta.nombre, formulas: meta.formulas, vars, locked, pending, sustitutorio });
 });
