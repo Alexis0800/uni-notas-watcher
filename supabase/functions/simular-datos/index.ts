@@ -39,9 +39,20 @@ type CursoMeta = {
   evaluaciones: EvaluacionCurso[];
 };
 
-function formulaUsaVariable(formulas: CursoMeta['formulas'], variable: string): boolean {
-  const re = new RegExp(`\\b${variable}\\b`, 'i');
-  return Boolean((formulas?.practicas && re.test(formulas.practicas)) || (formulas?.teoria && re.test(formulas.teoria)));
+// La fórmula es la fuente de verdad de qué variables hacen falta — no la
+// lista de evaluaciones, porque a veces INTRALU todavía ni creó el
+// registro de una práctica (la fórmula ya la menciona, el casillero
+// todavía no existe). PP se calcula aparte, nunca se pide directamente.
+function extraerVariables(formulas: CursoMeta['formulas']): string[] {
+  const texto = `${formulas?.practicas ?? ''} ${formulas?.teoria ?? ''}`;
+  const tokens = texto.match(/[A-Za-z][A-Za-z0-9]*/g) ?? [];
+  const vistas = new Set<string>();
+  for (const t of tokens) {
+    const upper = t.toUpperCase();
+    if (upper === 'MIN' || upper === 'PP') continue;
+    vistas.add(upper);
+  }
+  return Array.from(vistas);
 }
 
 Deno.serve(async (req) => {
@@ -77,14 +88,22 @@ Deno.serve(async (req) => {
   const vars: Record<string, number> = {};
   const pending: { variable: string; descripcion: string }[] = [];
 
-  for (const ev of meta.evaluaciones) {
-    if (ev.fecha) {
+  const evalPorVariable = new Map(meta.evaluaciones.map((ev) => [ev.variable.toUpperCase(), ev]));
+
+  for (const variable of extraerVariables(meta.formulas)) {
+    const ev = evalPorVariable.get(variable);
+    if (ev && ev.fecha) {
       // Fija: anulada (0A) o no se presentó (NSP) cuentan como 0 en la
       // fórmula; una nota numérica cuenta con su valor real.
       locked.push({ descripcion: ev.descripcion, valor: ev.valor ?? '—' });
-      vars[ev.variable] = ev.anulada || ev.nota === null ? 0 : ev.nota;
-    } else if (formulaUsaVariable(meta.formulas, ev.variable)) {
-      pending.push({ variable: ev.variable, descripcion: ev.descripcion });
+      vars[variable] = ev.anulada || ev.nota === null ? 0 : ev.nota;
+    } else if (ev) {
+      pending.push({ variable, descripcion: ev.descripcion });
+    } else {
+      // La fórmula la menciona pero INTRALU ni creó el casillero todavía
+      // (pasa con prácticas de cursos recién empezando) — no hay nombre
+      // real que mostrar, se usa el propio código de la variable.
+      pending.push({ variable, descripcion: variable });
     }
   }
 

@@ -110,15 +110,30 @@ function formatearFecha(iso: string): string {
   }
 }
 
-function formulaUsaVariable(formulas: CursoMeta['formulas'], variable: string): boolean {
-  const re = new RegExp(`\\b${variable}\\b`, 'i');
-  return Boolean((formulas?.practicas && re.test(formulas.practicas)) || (formulas?.teoria && re.test(formulas.teoria)));
+// La fórmula es la fuente de verdad de qué variables hacen falta — no la
+// lista de evaluaciones, porque a veces INTRALU todavía ni creó el
+// registro de una práctica (la fórmula ya la menciona, el casillero
+// todavía no existe). PP se calcula aparte, nunca se pide directamente.
+function extraerVariables(formulas: CursoMeta['formulas']): string[] {
+  const texto = `${formulas?.practicas ?? ''} ${formulas?.teoria ?? ''}`;
+  const tokens = texto.match(/[A-Za-z][A-Za-z0-9]*/g) ?? [];
+  const vistas = new Set<string>();
+  for (const t of tokens) {
+    const upper = t.toUpperCase();
+    if (upper === 'MIN' || upper === 'PP') continue;
+    vistas.add(upper);
+  }
+  return Array.from(vistas);
 }
 
-// Un curso es "simulable" si tiene alguna evaluación sin fecha de registro
-// (todavía no rendida) que la fórmula del curso efectivamente use.
+// Un curso es "simulable" si alguna variable que su fórmula necesita
+// todavía no tiene fecha de registro (o ni existe como evaluación aún).
 function tienePendientes(meta: CursoMeta): boolean {
-  return meta.evaluaciones.some((ev) => !ev.fecha && formulaUsaVariable(meta.formulas, ev.variable));
+  const evalPorVariable = new Map(meta.evaluaciones.map((ev) => [ev.variable.toUpperCase(), ev]));
+  return extraerVariables(meta.formulas).some((v) => {
+    const ev = evalPorVariable.get(v);
+    return !ev || !ev.fecha;
+  });
 }
 
 function botonSimular(codcur: string) {
