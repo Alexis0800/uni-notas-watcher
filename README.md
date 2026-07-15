@@ -38,6 +38,7 @@ que faltan.
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Modelo de amenazas, cifrado, verificación de identidad, riesgos residuales |
 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Cómo desplegar tu propia instancia desde cero (Supabase, GitHub Pages, GitHub Actions) |
 | [`docs/GRADING-RULES.md`](docs/GRADING-RULES.md) | Cómo funciona INTRALU por dentro: fórmulas, NSP, notas anuladas, Examen Sustitutorio |
+| [`docs/SCALING.md`](docs/SCALING.md) | Cuántos usuarios soporta hoy, dónde está el cuello de botella real, qué haría falta para más |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Cómo correr el proyecto localmente y contribuir cambios |
 
 ## Stack
