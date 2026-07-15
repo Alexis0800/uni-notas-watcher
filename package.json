@@ -5,6 +5,7 @@
   "license": "MIT",
   "description": "Bot de Telegram multiusuario: revisa INTRALU (alumnos.uni.edu.pe) y avisa por Telegram cuando aparece una nota nueva.",
   "type": "commonjs",
+  "packageManager": "pnpm@11.13.0",
   "engines": {
     "node": ">=22"
   },

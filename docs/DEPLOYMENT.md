@@ -53,18 +53,18 @@ Completa:
 ## Paso 4 — Desplegar las Edge Functions
 
 Con el [CLI de Supabase](https://supabase.com/docs/guides/cli) (no hace
-falta instalarlo globalmente, `npx` alcanza):
+falta instalarlo globalmente, `pnpm dlx` alcanza):
 
 ```bash
-npx supabase login              # abre el navegador, autoriza el CLI
-npx supabase link --project-ref TU_PROJECT_REF   # el ref está en la URL del dashboard
-npx supabase secrets set \
+pnpm dlx supabase login              # abre el navegador, autoriza el CLI
+pnpm dlx supabase link --project-ref TU_PROJECT_REF   # el ref está en la URL del dashboard
+pnpm dlx supabase secrets set \
   TELEGRAM_BOT_TOKEN=... \
   TELEGRAM_WEBHOOK_SECRET=... \
   CREDENTIALS_ENCRYPTION_KEY=...
-npx supabase functions deploy telegram-webhook --no-verify-jwt
-npx supabase functions deploy registro-webapp --no-verify-jwt
-npx supabase functions deploy simular-datos --no-verify-jwt
+pnpm dlx supabase functions deploy telegram-webhook --no-verify-jwt
+pnpm dlx supabase functions deploy registro-webapp --no-verify-jwt
+pnpm dlx supabase functions deploy simular-datos --no-verify-jwt
 ```
 
 `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` los inyecta Supabase

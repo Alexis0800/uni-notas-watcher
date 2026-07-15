@@ -3,15 +3,22 @@
 ## Correr localmente
 
 ```bash
-npm install
-cp .env.example .env   # completa tus propias credenciales de prueba
-npm run test-login     # login de diagnóstico contra INTRALU con tu usuario
-npm run check-all      # corre el chequeo completo contra tu Supabase
+corepack enable                # si no tenés pnpm activado todavía
+pnpm install
+cp .env.example .env           # completa tus propias credenciales de prueba
+pnpm run test-login            # login de diagnóstico contra INTRALU con tu usuario
+pnpm run check-all             # corre el chequeo completo contra tu Supabase
 ```
 
-`npm run test-login` no toca Supabase — solo confirma que el login y el
-scraping siguen funcionando contra el sitio real. Útil para aislar si un
-problema es del scraper o del resto del sistema.
+Este proyecto usa **pnpm**, no npm — bloquea por defecto los scripts
+`postinstall` de las dependencias (un vector común de ataques a la
+cadena de suministro), algo que npm ejecuta sin preguntar. El campo
+`packageManager` en `package.json` hace que Corepack use la versión
+correcta automáticamente.
+
+`pnpm run test-login` no toca Supabase — solo confirma que el login y
+el scraping siguen funcionando contra el sitio real. Útil para aislar
+si un problema es del scraper o del resto del sistema.
 
 ## Estructura del código
 
@@ -74,11 +81,11 @@ proyecto usa [Deno](https://deno.com/) — instálalo si no lo tienes
 ## Desplegar un cambio
 
 ```bash
-npx supabase functions deploy NOMBRE_DE_LA_FUNCION --no-verify-jwt
+pnpm dlx supabase functions deploy NOMBRE_DE_LA_FUNCION --no-verify-jwt
 ```
 
-Necesitas estar logueado (`npx supabase login`) y con el proyecto
-linkeado (`npx supabase link --project-ref TU_REF`) — ver
+Necesitas estar logueado (`pnpm dlx supabase login`) y con el proyecto
+linkeado (`pnpm dlx supabase link --project-ref TU_REF`) — ver
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 Para cambios en `public/*.html`, un simple `git push` a `main` dispara
@@ -87,7 +94,7 @@ Para cambios en `public/*.html`, un simple `git push` a `main` dispara
 ## Antes de hacer un PR
 
 - `deno check` + `deno lint` en cualquier Edge Function que tocaste.
-- Si tocaste `lib/session.js` o el scraping, corré `npm run test-login`
+- Si tocaste `lib/session.js` o el scraping, corré `pnpm run test-login`
   contra tu propio usuario real — no hay forma de probar el scraper sin
   pegarle al sitio real (no hay ambiente de staging de INTRALU).
 - Si agregaste texto que le llega al usuario final (mensajes del bot,

@@ -10,7 +10,7 @@ que faltan.
 
 **Bot en producción:** [@OrceBotV2_bot](https://t.me/OrceBotV2_bot)
 
-## Para usarlo (si sos estudiante UNI)
+## Para usarlo (si eres estudiante UNI)
 
 1. Abre el chat con [@OrceBotV2_bot](https://t.me/OrceBotV2_bot) en Telegram.
 2. Toca `/start` y luego el botón **📝 Registrarme** — se abre un
