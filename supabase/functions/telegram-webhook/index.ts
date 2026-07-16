@@ -57,7 +57,7 @@ async function dispararChequeoInmediato() {
   const token = Deno.env.get('GITHUB_DISPATCH_TOKEN');
   if (!token) return;
   try {
-    await fetch(
+    const res = await fetch(
       'https://api.github.com/repos/Alexis0800/uni-notas-watcher/actions/workflows/check-grade.yml/dispatches',
       {
         method: 'POST',
@@ -69,6 +69,7 @@ async function dispararChequeoInmediato() {
         body: JSON.stringify({ ref: 'main' }),
       },
     );
+    if (!res.ok) console.error('dispararChequeoInmediato:', res.status, await res.text());
   } catch {
     // best-effort, no pasa nada si falla
   }

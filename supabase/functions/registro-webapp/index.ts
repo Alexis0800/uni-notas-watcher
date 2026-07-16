@@ -27,6 +27,32 @@ async function sendMessage(chatId: number, text: string) {
   });
 }
 
+// Dispara la corrida de check-grade.yml ya mismo en vez de esperar a la
+// cadena de 5 min — best-effort: si falla (falta el secret, GitHub no
+// responde), el registro ya se guardó bien igual, y la cadena normal lo
+// recoge de todas formas (ver docs/SCALING.md).
+async function dispararChequeoInmediato() {
+  const token = Deno.env.get('GITHUB_DISPATCH_TOKEN');
+  if (!token) return;
+  try {
+    const res = await fetch(
+      'https://api.github.com/repos/Alexis0800/uni-notas-watcher/actions/workflows/check-grade.yml/dispatches',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ref: 'main' }),
+      },
+    );
+    if (!res.ok) console.error('dispararChequeoInmediato:', res.status, await res.text());
+  } catch {
+    // best-effort, no pasa nada si falla
+  }
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -77,9 +103,10 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: 'No pude guardar tu registro, intenta de nuevo en un rato.' }, 500);
   }
 
+  await dispararChequeoInmediato();
   await sendMessage(
     chatId,
-    `✅ Registrado con código ${codigo.toUpperCase()}. En los próximos minutos hago la primera revisión para guardar tu estado actual (sin avisarte nada todavía) — si tu código o contraseña están mal, te aviso aquí. Desde la revisión siguiente ya te aviso solo de notas nuevas de verdad.`,
+    `✅ Registrado con código <b>${codigo.toUpperCase()}</b>.\n\nYa estoy revisando tus notas — te mando tu estado actual por acá en cuanto termine.\nSi tu código o contraseña están mal, te aviso aquí también.`,
   );
 
   return json({ ok: true });
