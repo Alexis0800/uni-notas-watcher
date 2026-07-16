@@ -125,19 +125,20 @@ function emoji(valor: string): string {
 
 // Solo muestra evaluaciones ya calificadas (valor !== null — descarta las
 // pendientes, mismo criterio que usa check-all-users.js para /notas y las
-// notificaciones). Cierra cada curso con su promedio ya calculado por
-// INTRALU (ver docs/GRADING-RULES.md#promedios-que-ya-calcula-intralu).
+// notificaciones). Cierra cada curso con su PP y su promedio ya calculados
+// por INTRALU (ver docs/GRADING-RULES.md#promedios-que-ya-calcula-intralu).
+// El PP solo se muestra si el curso tiene fórmula de prácticas (algunos no).
 function agruparPorCurso(cursos: Record<string, CursoMeta>): string {
   const bloques: string[] = [];
   for (const meta of Object.values(cursos)) {
     const evaluadas = meta.evaluaciones.filter((ev) => ev.valor !== null);
     if (evaluadas.length === 0) continue;
     const lineas = evaluadas.map((e) => `   ${emoji(e.valor!)} ${e.descripcion}: <b>${e.valor}</b>`);
-    const promedio = meta.promedios?.promedio_final;
-    const resumen = promedio != null
-      ? `\n   📊 Promedio del curso: ${emoji(promedio)} <b>${promedio}</b>`
-      : '';
-    bloques.push(`📘 <b>${meta.nombre}</b>\n${lineas.join('\n')}${resumen}`);
+    const pp = meta.formulas?.practicas ? meta.promedios?.promedio_practicas : undefined;
+    const final = meta.promedios?.promedio_final;
+    const lineaPP = pp != null ? `\n   📊 PP (prácticas): ${emoji(pp)} <b>${pp}</b>` : '';
+    const lineaFinal = final != null ? `\n   📊 Promedio del curso: ${emoji(final)} <b>${final}</b>` : '';
+    bloques.push(`📘 <b>${meta.nombre}</b>\n${lineas.join('\n')}${lineaPP}${lineaFinal}`);
   }
   return bloques.join('\n\n');
 }
