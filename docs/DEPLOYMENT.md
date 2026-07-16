@@ -143,18 +143,39 @@ En tu repo → **Settings → Secrets and variables → Actions**, crea:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `CREDENTIALS_ENCRYPTION_KEY`
 - `TELEGRAM_TOKEN`
+- `WORKFLOW_DISPATCH_TOKEN` — un [fine-grained Personal Access Token](https://github.com/settings/tokens?type=beta)
+  con acceso *solo* a este repo y permiso "Actions: Read and write".
+  Sin este secret el chequeo periódico igual funciona, pero solo dispara
+  cada ~1h (el `schedule` nativo de GitHub Actions no es confiable para
+  intervalos de 5 min — ver [`docs/SCALING.md`](SCALING.md)); con él,
+  cada corrida se auto-encadena a la siguiente cada 5 min de verdad.
 
 Pestaña **Actions** → workflow **Check grade** → **Run workflow** para
 probarlo manualmente. Con 0 usuarios registrados debería terminar en
-verde diciendo "Revisando 0 usuario(s) activo(s)... Listo." Después
-queda corriendo solo cada 5 minutos ([`.github/workflows/check-grade.yml`](../.github/workflows/check-grade.yml)).
+verde diciendo "Revisando 0 usuario(s) activo(s)... Listo." Con el
+secret configurado, queda encadenándose solo cada 5 min
+([`.github/workflows/check-grade.yml`](../.github/workflows/check-grade.yml)).
+
+**Opcional — chequeo casi-inmediato al registrarse**: agrega el mismo
+valor del token de arriba como secret de **Supabase** (no de GitHub):
+
+```bash
+pnpm dlx supabase secrets set GITHUB_DISPATCH_TOKEN=el-mismo-token-de-arriba
+```
+
+Con esto, `telegram-webhook` dispara una corrida apenas alguien se
+registra, en vez de esperar a la próxima corrida encadenada. Es
+opcional — sin este secret el registro funciona igual, solo que la
+primera revisión llega en la corrida siguiente en vez de casi al toque.
 
 ## Paso 9 — Probar
 
 Escríbele a tu bot `/start` → toca **Registrarme** → completa el
-formulario con tu propio usuario de INTRALU. En los siguientes 5
-minutos debería llegarte una revisión silenciosa (estado base) y desde
-la segunda, avisos reales de notas nuevas.
+formulario con tu propio usuario de INTRALU. Deberías recibir la
+confirmación de registro casi al toque, y minutos después (o casi
+inmediato si configuraste `GITHUB_DISPATCH_TOKEN`) un mensaje con tus
+notas actuales. Desde ahí, avisos reales cada vez que aparezca algo
+nuevo.
 
 ## Repo público vs privado
 
