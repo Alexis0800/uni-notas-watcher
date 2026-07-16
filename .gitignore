@@ -3,3 +3,4 @@ node_modules/
 *-debug.html
 last-grade.json
 supabase/.temp/
+.superpowers/
