@@ -25,11 +25,21 @@ const RUN_WINDOW_SECONDS = 270;
 // todos en cada corrida — se toma a los más atrasados (ver main()).
 const MAX_BATCH_SIZE = Math.max(1, Math.floor((RUN_WINDOW_SECONDS / SECONDS_PER_USER) * CONCURRENCY));
 
-async function sendTelegram(token, chatId, text) {
+const PAGES_BASE = 'https://alexis0800.github.io/uni-notas-watcher';
+const REGISTRO_WEBAPP_URL = `${PAGES_BASE}/registro.html`;
+
+function botonRegistrar() {
+  return {
+    inline_keyboard: [[{ text: '📝 Registrarme', web_app: { url: REGISTRO_WEBAPP_URL } }]],
+  };
+}
+
+async function sendTelegram(token, chatId, text, replyMarkup) {
   await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
     chat_id: chatId,
     text,
     parse_mode: 'HTML',
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   });
 }
 
@@ -103,8 +113,8 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
       }
     }
 
-    // Primer chequeo tras registrarse: guarda el estado base sin notificar,
-    // para no avisar "nota nueva" de notas que la persona ya tenía antes.
+    // Primer chequeo tras registrarse: en vez de guardar el estado en
+    // silencio, manda un snapshot de las notas que ya hay hasta ahora.
     let cambios = [];
     if (seeded) {
       const previousMap = last_grades || {};
@@ -112,13 +122,21 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
         const prev = previousMap[key];
         if (!prev || prev.valor !== ev.valor) cambios.push(ev);
       }
-    }
-
-    if (cambios.length > 0) {
+      if (cambios.length > 0) {
+        await sendTelegram(
+          telegramToken,
+          chat_id,
+          `🎓 Nueva(s) nota(s) en INTRALU:\n\n${agruparPorCurso(cambios)}`,
+        );
+      }
+    } else {
+      const todas = Object.values(currentMap);
       await sendTelegram(
         telegramToken,
         chat_id,
-        `🎓 Nueva(s) nota(s) en INTRALU:\n\n${agruparPorCurso(cambios)}`,
+        todas.length > 0
+          ? `📋 Estas son tus notas actuales en INTRALU:\n\n${agruparPorCurso(todas)}\n\nDesde ahora te aviso cuando aparezca algo nuevo.`
+          : 'Todavía no tienes notas registradas en INTRALU para este ciclo. Desde ahora te aviso cuando aparezca algo nuevo.',
       );
     }
 
@@ -133,7 +151,7 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
       })
       .eq('id', id);
 
-    console.log(`✅ ${chat_id} (${codigo_uni}): ${seeded ? `${cambios.length} nota(s) nueva(s)` : 'estado base guardado'}`);
+    console.log(`✅ ${chat_id} (${codigo_uni}): ${seeded ? `${cambios.length} nota(s) nueva(s)` : 'snapshot inicial enviado'}`);
   } catch (err) {
     const failures = (usuario.consecutive_failures || 0) + 1;
     console.error(`❌ ${chat_id} (${codigo_uni}): ${err.message}`);
@@ -143,6 +161,7 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
         telegramToken,
         chat_id,
         '⚠️ No pude iniciar sesión en INTRALU con tus credenciales varias veces seguidas. Te desactivé del watcher — usa /registrar para volver a intentarlo.',
+        botonRegistrar(),
       ).catch(() => {});
       await supabase.from('usuarios').update({ active: false, consecutive_failures: failures }).eq('id', id);
     } else {
