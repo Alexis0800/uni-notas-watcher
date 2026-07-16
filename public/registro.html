@@ -48,12 +48,17 @@
     top: 6px;
     width: 32px;
     height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border: none;
+    border-radius: 6px;
     background: transparent;
-    font-size: 16px;
     cursor: pointer;
     color: var(--tg-theme-hint-color, #888888);
   }
+  .alternar-clave:hover { color: var(--tg-theme-text-color, #111111); }
+  .alternar-clave svg { width: 18px; height: 18px; }
   #status {
     margin-top: 20px;
     font-size: 14px;
@@ -79,7 +84,9 @@
     <label for="password">Contraseña de INTRALU</label>
     <div class="campo">
       <input id="password" name="password" type="password" autocomplete="current-password" required />
-      <button type="button" class="alternar-clave" id="alternarClave" aria-label="Mostrar contraseña">👁</button>
+      <button type="button" class="alternar-clave" id="alternarClave" aria-label="Mostrar contraseña">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
     </div>
   </form>
 
@@ -98,10 +105,44 @@
     const passwordEl = document.getElementById('password');
     const alternarClaveEl = document.getElementById('alternarClave');
 
+    // Ícono SVG en vez de emoji: 👁/🙈 se ven distinto (y a veces mal) según
+    // el sistema operativo — un ícono propio se ve igual en todos lados.
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    function crearIconoOjo(tachado) {
+      const svg = document.createElementNS(SVG_NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('fill', 'none');
+      svg.setAttribute('stroke', 'currentColor');
+      svg.setAttribute('stroke-width', '2');
+      svg.setAttribute('stroke-linecap', 'round');
+      svg.setAttribute('stroke-linejoin', 'round');
+      if (tachado) {
+        const path1 = document.createElementNS(SVG_NS, 'path');
+        path1.setAttribute('d', 'M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24');
+        const path2 = document.createElementNS(SVG_NS, 'path');
+        path2.setAttribute('d', 'M6.61 6.61A18.5 18.5 0 0 0 1 12s4 8 11 8a9.26 9.26 0 0 0 5.39-1.61');
+        const line = document.createElementNS(SVG_NS, 'line');
+        line.setAttribute('x1', '2');
+        line.setAttribute('y1', '2');
+        line.setAttribute('x2', '22');
+        line.setAttribute('y2', '22');
+        svg.append(path1, path2, line);
+      } else {
+        const path = document.createElementNS(SVG_NS, 'path');
+        path.setAttribute('d', 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z');
+        const circle = document.createElementNS(SVG_NS, 'circle');
+        circle.setAttribute('cx', '12');
+        circle.setAttribute('cy', '12');
+        circle.setAttribute('r', '3');
+        svg.append(path, circle);
+      }
+      return svg;
+    }
+
     alternarClaveEl.addEventListener('click', () => {
       const oculta = passwordEl.type === 'password';
       passwordEl.type = oculta ? 'text' : 'password';
-      alternarClaveEl.textContent = oculta ? '🙈' : '👁';
+      alternarClaveEl.replaceChildren(crearIconoOjo(oculta));
       alternarClaveEl.setAttribute('aria-label', oculta ? 'Ocultar contraseña' : 'Mostrar contraseña');
     });
 
