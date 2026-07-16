@@ -98,7 +98,12 @@
       }
       return tokens;
     }
-    function evaluarFormula(expr, vars) {
+    // `anuladas` es un Set<string> con los nombres de variable (ej. "N1")
+    // marcadas como 0A — nunca pueden ser la que MIN(...) descarta, aunque
+    // numéricamente sean las más bajas (cuentan como 0 en la suma igual,
+    // pero no son candidatas a ser eliminadas).
+    function evaluarFormula(expr, vars, anuladas) {
+      anuladas = anuladas || new Set();
       const tokens = tokenize(expr);
       let pos = 0;
       const peek = () => tokens[pos];
@@ -121,6 +126,19 @@
         }
         return value;
       }
+      // Un argumento de MIN(...) que es directamente una referencia a una
+      // variable (un solo token identificador, no una subexpresión) trae
+      // también su nombre — así MIN sabe si esa variable está anulada.
+      function parseArgConNombre() {
+        const tok = peek();
+        let nombre = null;
+        if (tok !== undefined && /^[A-Za-z]/.test(tok) && tok.toUpperCase() !== 'MIN') {
+          const siguiente = tokens[pos + 1];
+          if (siguiente === ',' || siguiente === ')') nombre = tok.toUpperCase();
+        }
+        const valor = parseExpr();
+        return { valor, nombre };
+      }
       function parseFactor() {
         const tok = peek();
         if (tok === undefined) throw new Error('Fórmula incompleta');
@@ -135,10 +153,12 @@
           if (tok.toUpperCase() === 'MIN') {
             next();
             if (next() !== '(') throw new Error('Se esperaba "(" después de MIN');
-            const valores = [parseExpr()];
-            while (peek() === ',') { next(); valores.push(parseExpr()); }
+            const args = [parseArgConNombre()];
+            while (peek() === ',') { next(); args.push(parseArgConNombre()); }
             if (next() !== ')') throw new Error('Falta paréntesis de cierre en MIN');
-            return Math.min(...valores);
+            const elegibles = args.filter((a) => !(a.nombre && anuladas.has(a.nombre)));
+            const candidatos = elegibles.length > 0 ? elegibles : args;
+            return Math.min(...candidatos.map((a) => a.valor));
           }
           next();
           const key = tok.toUpperCase();
