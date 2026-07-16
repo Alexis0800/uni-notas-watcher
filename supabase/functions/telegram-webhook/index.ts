@@ -95,12 +95,16 @@ function etiquetaCorta(codper: string): string {
 }
 
 // Responde el toque de un botón para que deje de girar en el cliente de
-// Telegram — sin texto, no hace falta ningún aviso de "espera un momento".
-async function answerCallbackQuery(callbackQueryId: string) {
+// Telegram. Con texto muestra un aviso nativo (toast/alerta) sin mandar un
+// mensaje aparte al chat — se usa cuando el ciclo no está en caché y hay que
+// esperar a que fetch-historial.yml corra, para que no parezca colgado.
+async function answerCallbackQuery(callbackQueryId: string, text?: string) {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ callback_query_id: callbackQueryId }),
+    body: JSON.stringify(
+      text ? { callback_query_id: callbackQueryId, text, show_alert: true } : { callback_query_id: callbackQueryId },
+    ),
   });
 }
 
@@ -131,21 +135,26 @@ async function dispararFetchHistorial(chatId: number, codper: string) {
 
 // deno-lint-ignore no-explicit-any
 async function manejarCallbackQuery(callbackQuery: any) {
-  await answerCallbackQuery(callbackQuery.id);
-
   const data = callbackQuery.data as string | undefined;
-  if (!data || !data.startsWith('ciclo:')) return;
+  if (!data || !data.startsWith('ciclo:')) {
+    await answerCallbackQuery(callbackQuery.id);
+    return;
+  }
 
   const codper = data.slice('ciclo:'.length);
   const chatId = callbackQuery.from.id;
 
   const { data: usuario } = await supabase.from('usuarios').select('historial').eq('chat_id', chatId).maybeSingle();
-  if (!usuario) return;
+  if (!usuario) {
+    await answerCallbackQuery(callbackQuery.id);
+    return;
+  }
 
   const historial = (usuario.historial ?? {}) as Historial;
   const cursosDelPeriodo = historial[codper];
 
   if (cursosDelPeriodo) {
+    await answerCallbackQuery(callbackQuery.id);
     const bloque = agruparPorCurso(cursosDelPeriodo);
     await sendMessage(
       chatId,
@@ -154,6 +163,7 @@ async function manejarCallbackQuery(callbackQuery: any) {
         : `No encontré notas registradas en el ciclo ${etiquetaPeriodo(codper)}.`,
     );
   } else {
+    await answerCallbackQuery(callbackQuery.id, '🔎 Buscando tus notas de ese ciclo, puede tardar un minuto...');
     await dispararFetchHistorial(chatId, codper);
   }
 }
