@@ -37,6 +37,27 @@ async function sendMessage(chatId: number, text: string, replyMarkup?: any) {
   });
 }
 
+// Reemplaza texto y quita los botones de un mensaje ya enviado — se usa en
+// /ciclos para dejar constancia visible de qué se tocó, en vez de un aviso
+// que desaparece solo (toast) y sin dejar los botones tocables de nuevo.
+async function editMessageText(chatId: number, messageId: number, text: string) {
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        text,
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [] },
+      }),
+    });
+  } catch {
+    // best-effort: si el mensaje ya no se puede editar, no pasa nada grave.
+  }
+}
+
 async function deleteMessage(chatId: number, messageId: number) {
   try {
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/deleteMessage`, {
@@ -143,27 +164,28 @@ async function manejarCallbackQuery(callbackQuery: any) {
 
   const codper = data.slice('ciclo:'.length);
   const chatId = callbackQuery.from.id;
+  const messageId = callbackQuery.message?.message_id as number | undefined;
+  const etiqueta = etiquetaPeriodo(codper);
+
+  await answerCallbackQuery(callbackQuery.id);
 
   const { data: usuario } = await supabase.from('usuarios').select('historial').eq('chat_id', chatId).maybeSingle();
-  if (!usuario) {
-    await answerCallbackQuery(callbackQuery.id);
-    return;
-  }
+  if (!usuario) return;
 
   const historial = (usuario.historial ?? {}) as Historial;
   const cursosDelPeriodo = historial[codper];
 
   if (cursosDelPeriodo) {
-    await answerCallbackQuery(callbackQuery.id);
+    if (messageId) await editMessageText(chatId, messageId, `📚 Ciclo ${etiqueta} seleccionado.`);
     const bloque = agruparPorCurso(cursosDelPeriodo);
     await sendMessage(
       chatId,
       bloque
-        ? `📚 Tus notas del ciclo ${etiquetaPeriodo(codper)}:\n\n${bloque}`
-        : `No encontré notas registradas en el ciclo ${etiquetaPeriodo(codper)}.`,
+        ? `📚 Tus notas del ciclo ${etiqueta}:\n\n${bloque}`
+        : `No encontré notas registradas en el ciclo ${etiqueta}.`,
     );
   } else {
-    await answerCallbackQuery(callbackQuery.id, '🔎 Buscando tus notas de ese ciclo, puede tardar un minuto...');
+    if (messageId) await editMessageText(chatId, messageId, `🔎 Buscando tus notas del ciclo ${etiqueta}, puede tardar un minuto...`);
     await dispararFetchHistorial(chatId, codper);
   }
 }
