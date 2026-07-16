@@ -27,16 +27,18 @@ async function sendMessage(chatId: number, text: string) {
   });
 }
 
-// Dispara la corrida de check-grade.yml ya mismo en vez de esperar a la
-// cadena de 5 min — best-effort: si falla (falta el secret, GitHub no
-// responde), el registro ya se guardó bien igual, y la cadena normal lo
-// recoge de todas formas (ver docs/SCALING.md).
+// Dispara check-new-registration.yml (workflow aparte de la cadena de 5
+// min de check-grade.yml, con su propio concurrency group) para revisar
+// ya mismo solo a los recién registrados — best-effort: si falla (falta
+// el secret, GitHub no responde), el registro ya se guardó bien igual, y
+// la cadena normal de check-grade.yml lo recoge de todas formas más tarde
+// (ver docs/SCALING.md).
 async function dispararChequeoInmediato() {
   const token = Deno.env.get('GITHUB_DISPATCH_TOKEN');
   if (!token) return;
   try {
     const res = await fetch(
-      'https://api.github.com/repos/Alexis0800/uni-notas-watcher/actions/workflows/check-grade.yml/dispatches',
+      'https://api.github.com/repos/Alexis0800/uni-notas-watcher/actions/workflows/check-new-registration.yml/dispatches',
       {
         method: 'POST',
         headers: {

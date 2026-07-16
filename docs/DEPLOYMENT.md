@@ -166,11 +166,14 @@ pnpm dlx supabase secrets set GITHUB_DISPATCH_TOKEN=el-mismo-token-de-arriba
 ```
 
 Con esto, `registro-webapp` (para registros por formulario) y
-`telegram-webhook` (para `/registrar` directo) disparan una corrida
-apenas alguien se registra, en vez de esperar a la próxima corrida
-encadenada. Es opcional — sin este secret el registro funciona igual,
-solo que la primera revisión llega en la corrida siguiente en vez de
-casi al toque.
+`telegram-webhook` (para `/registrar` directo) disparan
+[`check-new-registration.yml`](../.github/workflows/check-new-registration.yml)
+apenas alguien se registra — un workflow aparte de la cadena de 5 min,
+con su propio `concurrency group`, que solo revisa a los recién
+registrados (no se encola detrás de `check-grade.yml`, que casi siempre
+está ocupado). Es opcional — sin este secret el registro funciona
+igual, solo que la primera revisión llega en la corrida encadenada
+siguiente en vez de casi al toque.
 
 ## Paso 9 — Probar
 

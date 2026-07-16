@@ -25,6 +25,16 @@ const RUN_WINDOW_SECONDS = 270;
 // todos en cada corrida — se toma a los más atrasados (ver main()).
 const MAX_BATCH_SIZE = Math.max(1, Math.floor((RUN_WINDOW_SECONDS / SECONDS_PER_USER) * CONCURRENCY));
 
+// Modo usado por .github/workflows/check-new-registration.yml: en vez de la
+// cola completa por antigüedad, solo revisa a los recién registrados
+// (seeded=false). Lo dispara telegram-webhook/registro-webapp apenas alguien
+// se registra, en un workflow aparte con su propio concurrency group — así
+// no se encola detrás de la cadena de 5 min de check-grade.yml (ver
+// docs/SCALING.md). Tope chico porque en la práctica son 0-1 personas a la
+// vez; el tope es solo para acotar el peor caso ante una ráfaga de registros.
+const SOLO_NUEVOS = process.env.SOLO_NUEVOS === 'true';
+const MAX_NUEVOS = 20;
+
 const PAGES_BASE = 'https://alexis0800.github.io/uni-notas-watcher';
 const REGISTRO_WEBAPP_URL = `${PAGES_BASE}/registro.html`;
 
@@ -195,19 +205,18 @@ async function main() {
   // se salta una corrida, los más atrasados simplemente esperan un poco
   // más, en vez de perderse una franja entera), y no hay nada que se
   // desincronice si el número de usuarios activos cambia entre corridas.
-  const { data: usuarios, error } = await supabase
-    .from('usuarios')
-    .select('*')
-    .eq('active', true)
-    .order('seeded', { ascending: true })
-    .order('updated_at', { ascending: true })
-    .limit(MAX_BATCH_SIZE);
+  const query = supabase.from('usuarios').select('*').eq('active', true);
+  const { data: usuarios, error } = SOLO_NUEVOS
+    ? await query.eq('seeded', false).limit(MAX_NUEVOS)
+    : await query.order('seeded', { ascending: true }).order('updated_at', { ascending: true }).limit(MAX_BATCH_SIZE);
   if (error) throw error;
 
   console.log(
-    totalActivos > usuarios.length
-      ? `Revisando los ${usuarios.length} más atrasados de ${totalActivos} usuario(s) activo(s)...`
-      : `Revisando ${usuarios.length} usuario(s) activo(s)...`,
+    SOLO_NUEVOS
+      ? `Revisando ${usuarios.length} usuario(s) recién registrado(s)...`
+      : totalActivos > usuarios.length
+        ? `Revisando los ${usuarios.length} más atrasados de ${totalActivos} usuario(s) activo(s)...`
+        : `Revisando ${usuarios.length} usuario(s) activo(s)...`,
   );
 
   const start = Date.now();

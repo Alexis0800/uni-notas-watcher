@@ -248,6 +248,36 @@ secret, el paso lo detecta y no hace nada (avisa en el log, no falla
 el job) — se queda en el intervalo de ~1h del `schedule` nativo hasta
 que se agregue.
 
+### Por qué el chequeo al registrarse necesitó su propio workflow
+
+La primera versión de "chequeo casi-inmediato al registrarse" disparaba
+`workflow_dispatch` contra el mismo `check-grade.yml` de la cadena. En
+producción resultó no ser tan inmediato: cada corrida de la cadena usa
+prácticamente los 300s completos del ciclo (con pocos usuarios activos,
+la mayor parte es el `sleep` a propósito para mantener el ritmo de 5
+min, no trabajo real) — así que casi nunca hay un momento libre, y por
+`concurrency: cancel-in-progress: false` el dispatch del registro se
+encolaba detrás de la corrida en curso, en el peor caso perdiendo casi
+todo el ahorro de tiempo que buscaba.
+
+La solución: [`check-new-registration.yml`](../.github/workflows/check-new-registration.yml),
+un workflow aparte con su propio `concurrency: group:
+check-new-registration` — nunca comparte carril con `check-grade.yml`,
+así que corre en cuanto se dispara, sin esperar a que la cadena
+termine. Corre una sola vez (sin `sleep`, sin auto-encadenarse) y
+revisa solo a `seeded=false` (`SOLO_NUEVOS=true` en
+`check-all-users.js`), normalmente 0-1 personas — no el lote completo
+de la cola por antigüedad.
+
+**Límite conocido, aceptado a propósito**: si por coincidencia la
+cadena principal y este workflow revisan a la misma persona casi al
+mismo instante, INTRALU podría invalidar una de las dos sesiones (como
+se vio en el benchmark de concurrencia, ver más arriba) — se traduce en
+un fallo de login de más para esa persona, que se autocorrige solo (no
+desactiva a nadie antes de 3 fallos seguidos). Es una ventana angosta y
+de bajo impacto; no se agregó coordinación extra entre los dos
+workflows para cerrarla del todo.
+
 ## Qué seguiría faltando para ir más allá de unos pocos miles
 
 1. **Sacar el chequeo de GitHub Actions cron** — la cola por

@@ -1,0 +1,44 @@
+name: Check new registration
+
+# Solo se dispara vía workflow_dispatch, apenas alguien se registra
+# (telegram-webhook/registro-webapp llaman a esto en vez de a check-grade.yml
+# para el chequeo casi-inmediato). Corre una vez y termina — no se encadena,
+# no tiene schedule propio. Concurrency group aparte del de check-grade.yml a
+# propósito: así nunca se encola detrás de la cadena de 5 min, que
+# prácticamente siempre está ocupada (ver docs/SCALING.md). Revisa solo a
+# los usuarios recién registrados (seeded=false vía SOLO_NUEVOS=true en
+# check-all-users.js), no el lote completo.
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: check-new-registration
+  cancel-in-progress: false
+
+jobs:
+  check-new-registration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.13.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run check-all-users (solo nuevos)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CREDENTIALS_ENCRYPTION_KEY: ${{ secrets.CREDENTIALS_ENCRYPTION_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          SOLO_NUEVOS: 'true'
+        run: pnpm run check-all
