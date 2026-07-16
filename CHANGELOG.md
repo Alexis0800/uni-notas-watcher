@@ -5,7 +5,7 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/),
 y este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 
-## [Sin publicar]
+## [1.2.0] - 2026-07-16
 
 ### Added
 
@@ -17,6 +17,20 @@ y este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 - Primer uso de botones sin Mini App en el bot (`callback_query`) — los
   botones de `/ciclos` son una elección simple, no necesitan un
   formulario.
+
+### Changed
+
+- Etiquetas de los botones de `/ciclos` acortadas (año de 2 dígitos +
+  dígito de ciclo, ej. `26-1`) y agrupadas en filas de 4 en vez de una
+  por fila, para que quepan más sin tanto scroll.
+- Al tocar un botón de `/ciclos`, el mensaje se edita en el momento
+  (quita los botones y deja "seleccionado" o "buscando..., puede
+  tardar unos minutos") en vez de solo cerrar el spinner sin dejar
+  ningún rastro — evitaba que alguien pensara que no funcionó y
+  volviera a tocar el mismo botón.
+- `/ciclos` agregado al menú nativo de comandos de Telegram
+  (`setMyCommands`, documentado en [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md))
+  — antes solo aparecía en `/ayuda`.
 
 ## [1.1.0] - 2026-07-16
 

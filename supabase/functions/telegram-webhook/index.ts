@@ -185,7 +185,7 @@ async function manejarCallbackQuery(callbackQuery: any) {
         : `No encontré notas registradas en el ciclo ${etiqueta}.`,
     );
   } else {
-    if (messageId) await editMessageText(chatId, messageId, `🔎 Buscando tus notas del ciclo ${etiqueta}, puede tardar un minuto...`);
+    if (messageId) await editMessageText(chatId, messageId, `🔎 Buscando tus notas del ciclo ${etiqueta}, puede tardar unos minutos...`);
     await dispararFetchHistorial(chatId, codper);
   }
 }
