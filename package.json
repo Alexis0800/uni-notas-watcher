@@ -12,7 +12,8 @@
   "scripts": {
     "test-login": "node login-test.js",
     "benchmark-concurrency": "node benchmark-concurrency.js",
-    "check-all": "node check-all-users.js"
+    "check-all": "node check-all-users.js",
+    "fetch-historial": "node fetch-historial.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.6",
