@@ -44,6 +44,32 @@
     text-align: center;
   }
   .badge { font-weight: 600; }
+  .grupo-input { display: flex; gap: 6px; align-items: center; }
+  .grupo-input input { width: 60px; }
+  .grupo-input input:disabled {
+    opacity: 0.5;
+    background: var(--tg-theme-secondary-bg-color, #e8e8e8);
+  }
+  .chip {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--tg-theme-hint-color, #cccccc);
+    background: var(--tg-theme-bg-color, #ffffff);
+    color: var(--tg-theme-text-color, #111111);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .chip.activo { border-color: #d64545; background: #d64545; color: #ffffff; }
+  .formula {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    background: var(--tg-theme-secondary-bg-color, #f2f2f2);
+    padding: 8px 10px;
+    border-radius: 8px;
+    word-break: break-all;
+  }
+  .nota-pp { display: block; font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .aviso { font-size: 13px; margin: 8px 0 0; text-align: left; font-weight: 600; }
   #resultado {
     margin-top: 24px;
     padding: 16px;
@@ -207,6 +233,62 @@
       return fila;
     }
 
+    // 🟢 si el valor es un número >= 10, 🔴 en cualquier otro caso (incluye
+    // "0A" y "NSP", que Number() convierte en NaN).
+    function emoji(valor) {
+      const n = Number(valor);
+      return !Number.isNaN(n) && n >= NOTA_APROBATORIA ? '🟢' : '🔴';
+    }
+
+    // Fila de una evaluación pendiente: input numérico + chips NSP/0A. Tocar
+    // un chip fija esa fila en modo "valor especial" (input deshabilitado,
+    // cuenta como 0 en el cálculo); tocarlo de nuevo o tocar el input vuelve
+    // a modo numérico. NSP/0A no se guardan como texto en el input — se
+    // guardan en input.dataset.modo, que calcular() interpreta.
+    function crearFilaPendiente(ev) {
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = '0';
+      input.max = '20';
+      input.step = '0.5';
+      input.placeholder = '0-20';
+      input.dataset.variable = ev.variable;
+      input.dataset.modo = 'numero';
+
+      const chipNSP = document.createElement('button');
+      chipNSP.type = 'button';
+      chipNSP.className = 'chip';
+      chipNSP.textContent = 'NSP';
+
+      const chip0A = document.createElement('button');
+      chip0A.type = 'button';
+      chip0A.className = 'chip';
+      chip0A.textContent = '0A';
+
+      function activarModo(modo) {
+        input.dataset.modo = modo;
+        input.disabled = modo !== 'numero';
+        if (modo !== 'numero') input.value = '';
+        chipNSP.classList.toggle('activo', modo === 'NSP');
+        chip0A.classList.toggle('activo', modo === '0A');
+        input.dispatchEvent(new Event('input'));
+      }
+
+      chipNSP.addEventListener('click', () => activarModo(input.dataset.modo === 'NSP' ? 'numero' : 'NSP'));
+      chip0A.addEventListener('click', () => activarModo(input.dataset.modo === '0A' ? 'numero' : '0A'));
+      input.addEventListener('focus', () => {
+        if (input.dataset.modo !== 'numero') activarModo('numero');
+      });
+
+      const grupo = document.createElement('div');
+      grupo.className = 'grupo-input';
+      grupo.appendChild(input);
+      grupo.appendChild(chipNSP);
+      grupo.appendChild(chip0A);
+
+      return { fila: crearFila(ev.descripcion, grupo), input };
+    }
+
     if (!curso) {
       mostrarError('Falta indicar el curso. Abre este formulario desde /simular en el bot.');
     } else {
@@ -237,27 +319,21 @@
         contenidoEl.appendChild(h2);
         for (const ev of data.locked) {
           const badge = document.createElement('span');
-          badge.className = 'badge';
+          badge.className = 'badge ' + (emoji(ev.valor) === '🟢' ? 'verde' : 'rojo');
           badge.textContent = ev.valor;
           contenidoEl.appendChild(crearFila(ev.descripcion, badge));
         }
       }
 
-      const inputs = [];
+      const filas = [];
       if (data.pending.length > 0) {
         const h2 = document.createElement('h2');
         h2.textContent = 'Pendientes (simula tu nota)';
         contenidoEl.appendChild(h2);
         for (const ev of data.pending) {
-          const input = document.createElement('input');
-          input.type = 'number';
-          input.min = '0';
-          input.max = '20';
-          input.step = '0.5';
-          input.placeholder = '0-20';
-          input.dataset.variable = ev.variable;
-          contenidoEl.appendChild(crearFila(ev.descripcion, input));
-          inputs.push(input);
+          const filaInfo = crearFilaPendiente(ev);
+          contenidoEl.appendChild(filaInfo.fila);
+          filas.push(filaInfo);
         }
       }
 
@@ -277,21 +353,45 @@
         esInput.step = '0.5';
         esInput.placeholder = '0-20';
         contenidoEl.appendChild(crearFila(data.sustitutorio.descripcion, esInput));
-        esInput.addEventListener('input', () => calcular(data, inputs, esInput));
+        esInput.addEventListener('input', () => calcular(data, filas, esInput));
       }
 
-      inputs.forEach((input) => input.addEventListener('input', () => calcular(data, inputs, esInput)));
-      calcular(data, inputs, esInput);
+      if (data.formulas && (data.formulas.practicas || data.formulas.teoria)) {
+        const h2 = document.createElement('h2');
+        h2.textContent = 'Fórmulas de este curso';
+        contenidoEl.appendChild(h2);
+        if (data.formulas.practicas) {
+          const p = document.createElement('p');
+          p.className = 'formula';
+          p.textContent = 'Prácticas (PP): ' + data.formulas.practicas;
+          contenidoEl.appendChild(p);
+        }
+        if (data.formulas.teoria) {
+          const p = document.createElement('p');
+          p.className = 'formula';
+          p.textContent = 'Nota final: ' + data.formulas.teoria;
+          contenidoEl.appendChild(p);
+        }
+      }
+
+      filas.forEach(({ input }) => input.addEventListener('input', () => calcular(data, filas, esInput)));
+      calcular(data, filas, esInput);
     }
 
-    function calcular(data, inputs, esInput) {
+    function calcular(data, filas, esInput) {
       const vars = Object.assign({}, data.vars);
-      for (const input of inputs) {
-        const val = input.value.trim();
-        if (val === '') { limpiar(resultadoEl); return; }
-        const n = Number(val);
-        if (Number.isNaN(n) || n < 0 || n > 20) { limpiar(resultadoEl); return; }
-        vars[input.dataset.variable] = n;
+      const anuladas = new Set(data.anuladas || []);
+      for (const { input } of filas) {
+        if (input.dataset.modo === 'numero') {
+          const val = input.value.trim();
+          if (val === '') { limpiar(resultadoEl); return; }
+          const n = Number(val);
+          if (Number.isNaN(n) || n < 0 || n > 20) { limpiar(resultadoEl); return; }
+          vars[input.dataset.variable] = n;
+        } else {
+          vars[input.dataset.variable] = 0;
+          if (input.dataset.modo === '0A') anuladas.add(input.dataset.variable);
+        }
       }
       let valorES = null;
       if (esInput && esInput.value.trim() !== '') {
@@ -299,24 +399,42 @@
         if (Number.isNaN(n) || n < 0 || n > 20) { limpiar(resultadoEl); return; }
         valorES = n;
       }
-      calcularConVars(data, vars, valorES);
+      calcularConVars(data, vars, valorES, anuladas);
     }
 
-    function calcularConVars(data, vars, valorES) {
+    function calcularConVars(data, vars, valorES, anuladas) {
       try {
-        if (data.formulas.practicas) vars.PP = evaluarFormula(data.formulas.practicas, vars);
-        const final = evaluarFormula(data.formulas.teoria, vars);
+        let pp = null;
+        if (data.formulas.practicas) {
+          pp = evaluarFormula(data.formulas.practicas, vars, anuladas);
+          vars.PP = pp;
+        }
+        const final = evaluarFormula(data.formulas.teoria, vars, anuladas);
         const aprueba = final >= NOTA_APROBATORIA;
 
         let mejorConES = null;
         if (valorES !== null && 'EP' in vars && 'EF' in vars) {
-          const conEPReemplazada = evaluarFormula(data.formulas.teoria, Object.assign({}, vars, { EP: valorES }));
-          const conEFReemplazada = evaluarFormula(data.formulas.teoria, Object.assign({}, vars, { EF: valorES }));
+          const conEPReemplazada = evaluarFormula(data.formulas.teoria, Object.assign({}, vars, { EP: valorES }), anuladas);
+          const conEFReemplazada = evaluarFormula(data.formulas.teoria, Object.assign({}, vars, { EF: valorES }), anuladas);
           const mejor = Math.max(conEPReemplazada, conEFReemplazada);
           if (mejor > final) mejorConES = mejor;
         }
 
         limpiar(resultadoEl);
+
+        if (pp !== null) {
+          const ppSpan = document.createElement('span');
+          ppSpan.className = 'nota-pp ' + (pp >= NOTA_APROBATORIA ? 'verde' : 'rojo');
+          ppSpan.textContent = 'PP: ' + pp.toFixed(2);
+          resultadoEl.appendChild(ppSpan);
+          if (pp < 6) {
+            const aviso = document.createElement('p');
+            aviso.className = 'aviso';
+            aviso.textContent = '⚠️ Promedio de Prácticas menor a 6 — revisa si puedes rendir el examen o necesitas Sustitutorio.';
+            resultadoEl.appendChild(aviso);
+          }
+        }
+
         const notaSpan = document.createElement('span');
         notaSpan.className = 'nota ' + (aprueba ? 'verde' : 'rojo');
         notaSpan.textContent = final.toFixed(2);
