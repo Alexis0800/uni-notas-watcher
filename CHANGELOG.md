@@ -7,6 +7,17 @@ y este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Added
+
+- **`/ciclos`**: consulta las notas de un ciclo pasado bajo demanda, un
+  período a la vez (nunca todos de golpe) — la primera vez que se pide
+  un período dispara un login real (`fetch-historial.yml`, workflow
+  aparte); una vez consultado, queda en caché permanente (`historial`)
+  y las siguientes veces responde al toque.
+- Primer uso de botones sin Mini App en el bot (`callback_query`) — los
+  botones de `/ciclos` son una elección simple, no necesitan un
+  formulario.
+
 ## [1.1.0] - 2026-07-16
 
 ### Added

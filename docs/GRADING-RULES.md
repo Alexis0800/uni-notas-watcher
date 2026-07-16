@@ -117,6 +117,24 @@ Como esto ya es un cálculo real de INTRALU (no una aproximación local),
 vez de recalcularlo — evita duplicar el evaluador de fórmulas en Node
 o en el bot.
 
+## Períodos (`codper`) y ciclos pasados
+
+`codper` tiene el formato `AAAA` + un dígito de ciclo: `1` primer
+ciclo, `2` segundo ciclo, `3` verano (confirmado por un alumno real de
+la universidad; existe la posibilidad no confirmada de un `0`, sin
+significado asumido). El selector `#cb-periodos` de
+`/informacion-academica/cursos` trae **todos** los períodos donde el
+alumno tuvo actividad, no solo el actual — y `GET
+/informacion-academica/cursos?codper=X` sí devuelve los cursos de un
+período pasado (confirmado contra el sitio real). `fetchEvaluaciones`
+ya recibía `codper` como parámetro desde el principio; solo hacía
+falta que `fetchCursosMatriculados` también lo aceptara.
+
+Etiqueta legible: año + número romano del ciclo (`2026-I`, `2026-II`,
+`2026-III`) — nunca la palabra "Verano", por preferencia del
+mantenedor. Un dígito desconocido cae a un formato genérico
+(`2026 (ciclo 0)`) en vez de asumir un numeral que no existe.
+
 ## Examen Sustitutorio (ES)
 
 `ES` **no aparece en ninguna fórmula** — es una regla de negocio aparte

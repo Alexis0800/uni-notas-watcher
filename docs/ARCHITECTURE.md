@@ -129,6 +129,7 @@ supabase/
 .github/workflows/
   check-grade.yml               Corre check-all-users.js cada 5 min
   check-new-registration.yml     Corre check-all-users.js (SOLO_NUEVOS) al registrarse
+  fetch-historial.yml            Corre fetch-historial.js (un ciclo pasado bajo demanda, vía /ciclos)
   deploy-pages.yml               Publica public/ a GitHub Pages
 ```
 
@@ -165,7 +166,9 @@ Tabla `usuarios` (ver [`supabase/schema.sql`](../supabase/schema.sql)):
 | `codigo_uni` | `text` | Código de estudiante UNI |
 | `password_encrypted` | `text` | Contraseña de INTRALU cifrada (AES-256-GCM) |
 | `last_grades` | `jsonb` | Evaluaciones con fecha de registro — snapshot para detectar qué cambió entre corridas |
-| `cursos` | `jsonb` | Fórmulas, promedios (ya calculados por INTRALU) y lista completa de evaluaciones (con y sin fecha) por curso — para `/simular` y `/notas` |
+| `cursos` | `jsonb` | Fórmulas, promedios (ya calculados por INTRALU) y lista completa de evaluaciones (con y sin fecha) del **ciclo actual** — para `/simular` y `/notas` |
+| `periodos_disponibles` | `jsonb` | Lista de códigos de período del selector de INTRALU — poblada gratis durante el chequeo normal, la usa `/ciclos` para armar los botones |
+| `historial` | `jsonb` | Caché permanente de ciclos pasados ya consultados por `/ciclos` (mismo formato que `cursos`, uno por `codper`) — nunca la toca el chequeo de 5 min |
 | `seeded` | `boolean` | `false` hasta el primer chequeo tras registrarse (evita notificar todo como "nuevo") |
 | `active` | `boolean` | Se pone en `false` tras varios logins fallidos seguidos |
 | `consecutive_failures` | `integer` | Contador de logins fallidos consecutivos |
