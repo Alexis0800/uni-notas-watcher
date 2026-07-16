@@ -86,6 +86,7 @@ Deno.serve(async (req) => {
 
   const locked: { descripcion: string; valor: string }[] = [];
   const vars: Record<string, number> = {};
+  const anuladas: string[] = [];
   const pending: { variable: string; descripcion: string }[] = [];
 
   const evalPorVariable = new Map(meta.evaluaciones.map((ev) => [ev.variable.toUpperCase(), ev]));
@@ -94,9 +95,12 @@ Deno.serve(async (req) => {
     const ev = evalPorVariable.get(variable);
     if (ev && ev.fecha) {
       // Fija: anulada (0A) o no se presentó (NSP) cuentan como 0 en la
-      // fórmula; una nota numérica cuenta con su valor real.
+      // fórmula; una nota numérica cuenta con su valor real. Una anulada
+      // además se marca en `anuladas` para que el simulador nunca la deje
+      // ser la que MIN(...) descarta (ver public/simulador.html).
       locked.push({ descripcion: ev.descripcion, valor: ev.valor ?? '—' });
       vars[variable] = ev.anulada || ev.nota === null ? 0 : ev.nota;
+      if (ev.anulada) anuladas.push(variable);
     } else if (ev) {
       pending.push({ variable, descripcion: ev.descripcion });
     } else {
@@ -113,5 +117,5 @@ Deno.serve(async (req) => {
   const esEval = evalPorVariable.get('ES');
   const sustitutorio = esEval && !esEval.fecha ? { variable: 'ES', descripcion: esEval.descripcion } : null;
 
-  return json({ ok: true, nombre: meta.nombre, formulas: meta.formulas, vars, locked, pending, sustitutorio });
+  return json({ ok: true, nombre: meta.nombre, formulas: meta.formulas, vars, anuladas, locked, pending, sustitutorio });
 });
