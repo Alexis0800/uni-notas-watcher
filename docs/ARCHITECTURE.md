@@ -17,7 +17,9 @@ responsabilidades entre seis piezas:
 5. **Scraper** (`lib/session.js`, Node.js) — login y extracción de notas
    de INTRALU.
 6. **Chequeo periódico** (`check-all-users.js`, corrido por GitHub
-   Actions cada 5 min).
+   Actions: cada 5 min vía `check-grade.yml`, o casi al toque apenas
+   alguien se registra vía `check-new-registration.yml` — mismo script,
+   ver más abajo por qué son dos workflows separados).
 
 ```
 ┌─────────────────────┐     ┌──────────────────────┐
@@ -49,6 +51,13 @@ responsabilidades entre seis piezas:
 └─────────────────┘              │      (INTRALU)         │
                                    └──────────────────────┘
 ```
+
+`registro-webapp` y `telegram-webhook` (al registrarse) también llaman a
+la API de GitHub para disparar `check-new-registration.yml` — un
+workflow aparte de `check-grade.yml`, con su propio `concurrency group`,
+que corre el mismo `check-all-users.js` pero revisando solo al recién
+registrado en vez de esperar a la cadena de 5 min (ver
+[`docs/SCALING.md`](SCALING.md#por-qué-el-chequeo-al-registrarse-necesitó-su-propio-workflow)).
 
 ## Por qué esta arquitectura
 
@@ -118,8 +127,9 @@ supabase/
     registro-webapp/        API del formulario de registro (Deno)
     simular-datos/           API del simulador (Deno, solo lectura)
 .github/workflows/
-  check-grade.yml            Corre check-all-users.js cada 5 min
-  deploy-pages.yml            Publica public/ a GitHub Pages
+  check-grade.yml               Corre check-all-users.js cada 5 min
+  check-new-registration.yml     Corre check-all-users.js (SOLO_NUEVOS) al registrarse
+  deploy-pages.yml               Publica public/ a GitHub Pages
 ```
 
 ## Por qué hay código duplicado entre Node y Deno
@@ -154,8 +164,8 @@ Tabla `usuarios` (ver [`supabase/schema.sql`](../supabase/schema.sql)):
 | `chat_id` | `bigint` (único) | Identifica al usuario de Telegram |
 | `codigo_uni` | `text` | Código de estudiante UNI |
 | `password_encrypted` | `text` | Contraseña de INTRALU cifrada (AES-256-GCM) |
-| `last_grades` | `jsonb` | Evaluaciones con fecha de registro — para notificar y `/notas` |
-| `cursos` | `jsonb` | Fórmulas, promedios y lista completa de evaluaciones (con y sin fecha) por curso — para `/simular` |
+| `last_grades` | `jsonb` | Evaluaciones con fecha de registro — snapshot para detectar qué cambió entre corridas |
+| `cursos` | `jsonb` | Fórmulas, promedios (ya calculados por INTRALU) y lista completa de evaluaciones (con y sin fecha) por curso — para `/simular` y `/notas` |
 | `seeded` | `boolean` | `false` hasta el primer chequeo tras registrarse (evita notificar todo como "nuevo") |
 | `active` | `boolean` | Se pone en `false` tras varios logins fallidos seguidos |
 | `consecutive_failures` | `integer` | Contador de logins fallidos consecutivos |

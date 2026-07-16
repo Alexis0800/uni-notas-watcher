@@ -7,6 +7,69 @@ y este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [1.1.0] - 2026-07-16
+
+### Added
+
+- **Chips NSP/0A en el simulador** (`public/simulador.html`): cada
+  evaluación pendiente se puede marcar como "No Se Presentó" o "Anulada"
+  con un toque, en vez de tener que saber que ambas cuentan como 0.
+- **Fórmulas y PP visibles en el simulador**: se muestra el texto crudo
+  de las fórmulas de prácticas/nota final de INTRALU, y el resultado
+  desglosa el promedio de prácticas (PP) por separado, con un aviso si
+  da menos de 6.
+- **`check-new-registration.yml`**: workflow aparte (con su propio
+  `concurrency group`) que revisa solo a los recién registrados apenas
+  se registran — no comparte carril con la cadena de 5 min de
+  `check-grade.yml`, así que corre casi al instante en vez de encolarse
+  detrás de ella.
+- **Promedio del curso en `/notas` y en los avisos de notas nuevas**:
+  INTRALU ya calcula `promedios.promedio_final` por curso — ahora se
+  muestra tal cual (sin recalcularlo) para no tener que sacar la cuenta
+  a mano. Documentado en [`docs/GRADING-RULES.md`](docs/GRADING-RULES.md).
+- **Mostrar/ocultar contraseña** en el formulario de registro, con
+  validación en vivo por campo y bloqueo de los inputs mientras se
+  envía.
+- Botón de registro agregado a mensajes que antes solo lo mencionaban en
+  texto (aviso de desactivación por login fallido, `/estado` cuando la
+  cuenta está inactiva).
+
+### Changed
+
+- El chequeo casi-inmediato al registrarse ahora dispara
+  `check-new-registration.yml` en vez de `check-grade.yml` — la primera
+  versión compartía el `concurrency group` de la cadena de 5 min, que
+  casi siempre está ocupada, así que en la práctica no era tan
+  inmediato (ver [`docs/SCALING.md`](docs/SCALING.md)).
+- `/notas` pasa a leer de `cursos` en vez de `last_grades` (mismo
+  filtro de evaluaciones ya calificadas, ahora agrupado junto con el
+  promedio de cada curso).
+- Mensaje de confirmación de registro reescrito (más corto, sin la
+  promesa vaga de "en los próximos minutos") en **ambos** caminos de
+  registro: el comando de texto (`telegram-webhook`) y el formulario de
+  Mini App (`registro-webapp`) — el segundo había quedado sin el
+  tratamiento en una primera pasada, encontrado en revisión.
+- La primera revisión tras registrarse manda un snapshot completo de
+  notas en vez de guardar el estado en silencio.
+- `AYUDA` y `/estado` reciben el mismo tratamiento visual (negritas,
+  🟢/🔴) que ya tenía el resto de mensajes del bot.
+- Ícono de mostrar/ocultar contraseña pasa de emoji (👁/🙈, que se ven
+  distinto según el sistema operativo) a un ícono SVG propio.
+
+### Fixed
+
+- El simulador podía dejar que una nota anulada (0A) fuera la que
+  `MIN(...)` descarta al elegir la nota más baja de un curso — una
+  anulada ahora nunca es candidata a ser la descartada, aunque
+  numéricamente sea la más baja.
+
+### Security
+
+- Documentados `WORKFLOW_DISPATCH_TOKEN` (GitHub) y
+  `GITHUB_DISPATCH_TOKEN` (Supabase) en
+  [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — ambos acotados a permiso
+  de solo Actions de este repo, sin acceso a código ni credenciales.
+
 ## [1.0.0] - 2026-07-16
 
 Primera versión publicada. Bot de Telegram multiusuario que revisa

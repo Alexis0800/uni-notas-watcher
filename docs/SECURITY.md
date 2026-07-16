@@ -118,6 +118,19 @@ El scraper y la lógica del bot son públicos — pero:
 - El código de estudiante de terceros nunca se expone (solo se guarda
   cifrado en la base de datos).
 
+### Tokens operativos (`WORKFLOW_DISPATCH_TOKEN` / `GITHUB_DISPATCH_TOKEN`)
+
+Son Personal Access Tokens de GitHub, no credenciales de estudiantes —
+pero vale la pena decir qué pasa si alguno se filtra. Ambos son
+fine-grained, acotados a **este repo únicamente** y al permiso
+"Actions: Read and write" — no pueden leer código, no pueden leer otros
+secrets, no pueden tocar la base de datos. Si alguno se filtrara, lo
+máximo que permite es disparar o cancelar corridas de este workflow
+(gasto de minutos de Actions, en el peor caso alguien fuerza corridas
+extra) — no hay forma de llegar desde ahí a credenciales de usuarios ni
+a INTRALU. Ver [`docs/SCALING.md`](SCALING.md) para cómo se crean y
+[`docs/DEPLOYMENT.md`](DEPLOYMENT.md) para dónde se configuran.
+
 ## Incidentes reales durante el desarrollo
 
 Documentados acá con honestidad porque son parte de la historia real

@@ -5,7 +5,8 @@ Bot de Telegram multiusuario que revisa [INTRALU](https://alumnos.uni.edu.pe)
 avisa automáticamente cuando aparece una nota nueva — por evaluación
 (Práctica 1, Examen Parcial, Examen Final, etc.), no solo la nota final del
 curso. También permite ver todas las notas registradas agrupadas por curso
-y simular con cuánto se aprueba cada curso antes de que salgan las notas
+(con el promedio de cada curso ya calculado, sin sacar la cuenta a mano) y
+simular con cuánto se aprueba cada curso antes de que salgan las notas
 que faltan.
 
 **Bot en producción:** [@OrceBotV2_bot](https://t.me/OrceBotV2_bot)
@@ -16,15 +17,15 @@ que faltan.
 2. Toca `/start` y luego el botón **📝 Registrarme** — se abre un
    formulario dentro de Telegram, sin escribir tu contraseña como
    mensaje de texto en el chat.
-3. Listo. Cada 5 minutos el bot revisa tus notas y te avisa por Telegram
-   si hay algo nuevo. Usa `/notas` para ver todo lo registrado hasta
-   ahora, o `/simular` para calcular con cuánto necesitas aprobar un
-   curso.
+3. En cuanto te registres, reviso tus notas casi al toque y te mando tu
+   estado actual. Desde ahí, cada 5 minutos te aviso si hay algo nuevo.
+   Usa `/notas` para ver todo lo registrado hasta ahora, o `/simular`
+   para calcular con cuánto necesitas aprobar un curso.
 
 ## Comandos del bot
 
 - `/registrar` — abre el formulario de registro (o `/registrar CODIGO CONTRASEÑA` por texto)
-- `/notas` — todas tus notas registradas, agrupadas por curso, con 🟢/🔴
+- `/notas` — todas tus notas registradas, agrupadas por curso, con 🟢/🔴 y el promedio de cada curso
 - `/simular` — elige un curso y simula tu nota final con lo que falta
 - `/estado` — si estás activo y cuándo se revisó por última vez
 - `/baja` — borra tu registro y tu contraseña
@@ -55,8 +56,9 @@ que faltan.
   plan gratis, así que los formularios viven acá y le pegan a la API por
   `fetch`.
 - **Chequeo periódico** ([GitHub Actions](https://docs.github.com/actions),
-  `check-all-users.js`): corre cada 5 minutos, revisa a todos los
-  usuarios activos y notifica.
+  `check-all-users.js`): corre cada 5 minutos (o casi al toque al
+  registrarse), revisa a los usuarios activos y notifica — ver
+  [`docs/SCALING.md`](docs/SCALING.md) para los límites reales de esto.
 
 Diagrama completo en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
