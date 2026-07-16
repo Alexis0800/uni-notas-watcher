@@ -40,6 +40,7 @@ que faltan.
 | [`docs/GRADING-RULES.md`](docs/GRADING-RULES.md) | Cómo funciona INTRALU por dentro: fórmulas, NSP, notas anuladas, Examen Sustitutorio |
 | [`docs/SCALING.md`](docs/SCALING.md) | Cuántos usuarios soporta hoy, dónde está el cuello de botella real, qué haría falta para más |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Cómo correr el proyecto localmente y contribuir cambios |
+| [`CHANGELOG.md`](CHANGELOG.md) | Historial de versiones publicadas |
 
 ## Stack
 
