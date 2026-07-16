@@ -1,0 +1,54 @@
+name: Fetch historial
+
+# Disparado solo por telegram-webhook cuando alguien pide, con /ciclos, un
+# ciclo pasado que todavía no está en `historial`. Corre una sola vez (sin
+# sleep, sin auto-encadenarse) y revisa un solo (chat_id, codper) — nunca un
+# lote. El concurrency group está scopeado a ese par específico (no a todo
+# el workflow, a diferencia de check-grade.yml/check-new-registration.yml):
+# dos usuarios distintos pidiendo períodos distintos corren en paralelo sin
+# problema; solo se evita que el mismo usuario dispare dos veces la misma
+# consulta encimada.
+
+on:
+  workflow_dispatch:
+    inputs:
+      chat_id:
+        description: 'Telegram chat_id del usuario'
+        required: true
+        type: string
+      codper:
+        description: 'Código de período a consultar (ej. 20252)'
+        required: true
+        type: string
+
+concurrency:
+  group: fetch-historial-${{ github.event.inputs.chat_id }}-${{ github.event.inputs.codper }}
+  cancel-in-progress: true
+
+jobs:
+  fetch-historial:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.13.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run fetch-historial
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CREDENTIALS_ENCRYPTION_KEY: ${{ secrets.CREDENTIALS_ENCRYPTION_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ github.event.inputs.chat_id }}
+          CODPER: ${{ github.event.inputs.codper }}
+        run: pnpm run fetch-historial
