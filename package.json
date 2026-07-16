@@ -11,6 +11,7 @@
   },
   "scripts": {
     "test-login": "node login-test.js",
+    "benchmark-concurrency": "node benchmark-concurrency.js",
     "check-all": "node check-all-users.js"
   },
   "dependencies": {

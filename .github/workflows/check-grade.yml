@@ -1,6 +1,11 @@
 name: Check grade
 
 on:
+  # Respaldo: GitHub puede atrasar o saltarse esto bajo carga de la
+  # plataforma (medido: dispara cada ~1h, no cada 5 min — ver
+  # docs/SCALING.md#hallazgo-aparte). El auto-encadenado del último paso
+  # de abajo es el mecanismo real para el cadencia de 5 min; esto solo
+  # reinicia la cadena si se rompió por alguna corrida fallida.
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch: {}
@@ -13,6 +18,9 @@ jobs:
   check-grade:
     runs-on: ubuntu-latest
     steps:
+      - name: Registrar hora de inicio
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
@@ -34,3 +42,32 @@ jobs:
           CREDENTIALS_ENCRYPTION_KEY: ${{ secrets.CREDENTIALS_ENCRYPTION_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         run: pnpm run check-all
+
+      # El GITHUB_TOKEN por defecto NO puede disparar workflow_dispatch —
+      # GitHub lo bloquea a propósito para evitar loops recursivos. Por eso
+      # esto necesita un Personal Access Token real guardado como secret
+      # (WORKFLOW_DISPATCH_TOKEN). Sin ese secret, este paso simplemente no
+      # hace nada y se depende del schedule de respaldo de arriba (~1h).
+      # Ver docs/SCALING.md para cómo crear el token.
+      - name: Encadenar la siguiente corrida en ~5 min
+        if: always()
+        env:
+          DISPATCH_TOKEN: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$DISPATCH_TOKEN" ]; then
+            echo "⚠️ Falta el secret WORKFLOW_DISPATCH_TOKEN — no se encadena la siguiente corrida."
+            exit 0
+          fi
+
+          elapsed=$(( $(date +%s) - JOB_START ))
+          sleep_for=$(( 300 - elapsed ))
+          if [ "$sleep_for" -gt 0 ]; then
+            echo "Esperando ${sleep_for}s para completar el ciclo de 5 min..."
+            sleep "$sleep_for"
+          fi
+
+          curl -sf -X POST \
+            -H "Authorization: Bearer $DISPATCH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/check-grade.yml/dispatches" \
+            -d "{\"ref\":\"${{ github.ref_name }}\"}"

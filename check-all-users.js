@@ -4,9 +4,26 @@ const { createClient } = require('@supabase/supabase-js');
 const { login, fetchCursosMatriculados, fetchEvaluaciones, formatearNota } = require('./lib/session');
 const { decrypt } = require('./lib/crypto');
 
-const CONCURRENCY = 5;
+const CONCURRENCY = Number(process.env.CONCURRENCY) || 15;
 const FAILURE_THRESHOLD = 3;
 const NOTA_APROBATORIA = 10;
+
+// Medido desde corridas reales de GitHub Actions (no desde una máquina
+// local — la ruta de red hacia alumnos.uni.edu.pe es más lenta desde ahí):
+// 26-32s por usuario en 5 corridas con 1 solo usuario activo, ver
+// docs/SCALING.md#cómo-se-midió-esto. El main() de abajo loggea el tiempo
+// real de cada corrida para poder seguir ajustando esto según crezca la
+// base de usuarios.
+const SECONDS_PER_USER = 30;
+// Margen bajo los 5 min del cron. El overhead real de checkout + setup-node
+// + pnpm install medido en GitHub Actions es de solo ~5s (no los ~90s que
+// se asumían antes de medirlo) — 270s deja margen de sobra para eso más
+// variación normal.
+const RUN_WINDOW_SECONDS = 270;
+// Cuántos usuarios caben en una pasada sin que la corrida se pase de
+// RUN_WINDOW_SECONDS. Si hay más usuarios activos que esto, no se revisan
+// todos en cada corrida — se toma a los más atrasados (ver main()).
+const MAX_BATCH_SIZE = Math.max(1, Math.floor((RUN_WINDOW_SECONDS / SECONDS_PER_USER) * CONCURRENCY));
 
 async function sendTelegram(token, chatId, text) {
   await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -142,17 +159,53 @@ async function main() {
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const { data: usuarios, error } = await supabase.from('usuarios').select('*').eq('active', true);
+
+  const { count: totalActivos, error: countError } = await supabase
+    .from('usuarios')
+    .select('*', { count: 'exact', head: true })
+    .eq('active', true);
+  if (countError) throw countError;
+
+  // Cola por antigüedad: primero los que nunca se revisaron (seeded=false,
+  // para no atrasar su primer chequeo), después los más atrasados por
+  // updated_at. Un usuario que falla en checkUser() no toca updated_at, así
+  // que vuelve a quedar primero en la cola y se reintenta la próxima
+  // corrida — no hace falta esperar un "ciclo" completo para reintentarlo.
+  // Esto reemplaza el sharding por franjas de tiempo: no depende de que
+  // GitHub Actions dispare el cron exactamente cada 5 min (si se atrasa o
+  // se salta una corrida, los más atrasados simplemente esperan un poco
+  // más, en vez de perderse una franja entera), y no hay nada que se
+  // desincronice si el número de usuarios activos cambia entre corridas.
+  const { data: usuarios, error } = await supabase
+    .from('usuarios')
+    .select('*')
+    .eq('active', true)
+    .order('seeded', { ascending: true })
+    .order('updated_at', { ascending: true })
+    .limit(MAX_BATCH_SIZE);
   if (error) throw error;
 
-  console.log(`Revisando ${usuarios.length} usuario(s) activo(s)...`);
+  console.log(
+    totalActivos > usuarios.length
+      ? `Revisando los ${usuarios.length} más atrasados de ${totalActivos} usuario(s) activo(s)...`
+      : `Revisando ${usuarios.length} usuario(s) activo(s)...`,
+  );
 
+  const start = Date.now();
   for (let i = 0; i < usuarios.length; i += CONCURRENCY) {
     const batch = usuarios.slice(i, i + CONCURRENCY);
     await Promise.all(batch.map((u) => checkUser(supabase, TELEGRAM_TOKEN, CREDENTIALS_ENCRYPTION_KEY, u)));
   }
 
-  console.log('Listo.');
+  // Tiempo real por usuario de esta corrida — para poder recalibrar
+  // SECONDS_PER_USER/RUN_WINDOW_SECONDS con datos reales según crezca la
+  // base de usuarios, en vez de asumirlo (ver docs/SCALING.md).
+  const elapsedSeconds = (Date.now() - start) / 1000;
+  if (usuarios.length > 0) {
+    console.log(`Listo en ${elapsedSeconds.toFixed(1)}s (${(elapsedSeconds / usuarios.length).toFixed(1)}s/usuario).`);
+  } else {
+    console.log('Listo (sin usuarios que revisar).');
+  }
 }
 
 main().catch((err) => {
