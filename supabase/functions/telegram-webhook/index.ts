@@ -77,6 +77,80 @@ async function dispararChequeoInmediato() {
   }
 }
 
+// AAAA + dígito de ciclo: 1 primer ciclo, 2 segundo ciclo, 3 verano
+// (confirmado por un alumno real de la universidad). Un dígito desconocido
+// cae a un formato genérico en vez de inventar un numeral que no existe.
+const ROMANOS: Record<string, string> = { '1': 'I', '2': 'II', '3': 'III' };
+function etiquetaPeriodo(codper: string): string {
+  const anio = codper.slice(0, 4);
+  const digito = codper.slice(4);
+  return ROMANOS[digito] ? `${anio}-${ROMANOS[digito]}` : `${anio} (ciclo ${digito})`;
+}
+
+// Responde el toque de un botón para que deje de girar en el cliente de
+// Telegram — sin texto, no hace falta ningún aviso de "espera un momento".
+async function answerCallbackQuery(callbackQueryId: string) {
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callback_query_id: callbackQueryId }),
+  });
+}
+
+// Dispara fetch-historial.yml (workflow aparte, revisa un solo período de
+// un solo usuario) para consultar un ciclo pasado que todavía no está en
+// `historial` — best-effort, mismo patrón que dispararChequeoInmediato.
+async function dispararFetchHistorial(chatId: number, codper: string) {
+  const token = Deno.env.get('GITHUB_DISPATCH_TOKEN');
+  if (!token) return;
+  try {
+    const res = await fetch(
+      'https://api.github.com/repos/Alexis0800/uni-notas-watcher/actions/workflows/fetch-historial.yml/dispatches',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ref: 'main', inputs: { chat_id: String(chatId), codper } }),
+      },
+    );
+    if (!res.ok) console.error('dispararFetchHistorial:', res.status, await res.text());
+  } catch {
+    // best-effort, no pasa nada si falla
+  }
+}
+
+// deno-lint-ignore no-explicit-any
+async function manejarCallbackQuery(callbackQuery: any) {
+  await answerCallbackQuery(callbackQuery.id);
+
+  const data = callbackQuery.data as string | undefined;
+  if (!data || !data.startsWith('ciclo:')) return;
+
+  const codper = data.slice('ciclo:'.length);
+  const chatId = callbackQuery.from.id;
+
+  const { data: usuario } = await supabase.from('usuarios').select('historial').eq('chat_id', chatId).maybeSingle();
+  if (!usuario) return;
+
+  const historial = (usuario.historial ?? {}) as Historial;
+  const cursosDelPeriodo = historial[codper];
+
+  if (cursosDelPeriodo) {
+    const bloque = agruparPorCurso(cursosDelPeriodo);
+    await sendMessage(
+      chatId,
+      bloque
+        ? `📚 Tus notas del ciclo ${etiquetaPeriodo(codper)}:\n\n${bloque}`
+        : `No encontré notas registradas en el ciclo ${etiquetaPeriodo(codper)}.`,
+    );
+  } else {
+    await dispararFetchHistorial(chatId, codper);
+  }
+}
+
 function botonRegistrar() {
   return {
     inline_keyboard: [[{ text: '📝 Registrarme', web_app: { url: REGISTRO_WEBAPP_URL } }]],
@@ -88,6 +162,7 @@ const AYUDA = `Notificador de notas UNI (INTRALU)
 Comandos:
 <b>/registrar</b> — registra o actualiza tu usuario de INTRALU (abre un formulario)
 <b>/notas</b> — muestra todas tus notas registradas hasta ahora
+<b>/ciclos</b> — consulta tus notas de un ciclo anterior
 <b>/simular</b> — simula tu nota final de un curso con las evaluaciones que aún faltan
 <b>/estado</b> — ve si estás activo y cuándo se revisó por última vez
 <b>/baja</b> — borra tu registro y tu contraseña
@@ -114,6 +189,10 @@ type CursoMeta = {
   promedios: Promedios | null;
   evaluaciones: EvaluacionCurso[];
 };
+// Caché permanente de ciclos pasados ya consultados por /ciclos, clave
+// codper — nunca lo toca el chequeo de 5 min (ver
+// docs/superpowers/specs/2026-07-16-ciclos-pasados-design.md).
+type Historial = Record<string, Record<string, CursoMeta>>;
 
 // 🟢 si el valor es un número >= 10, 🔴 en cualquier otro caso (desaprobado,
 // "0A" anulada, "NSP" no se presentó). Telegram no soporta color de texto en
@@ -196,6 +275,12 @@ Deno.serve(async (req) => {
   }
 
   const update = await req.json();
+
+  if (update.callback_query) {
+    await manejarCallbackQuery(update.callback_query);
+    return new Response('ok');
+  }
+
   const message = update.message;
   if (!message || typeof message.text !== 'string') {
     return new Response('ok');
@@ -279,6 +364,22 @@ Deno.serve(async (req) => {
         await sendMessage(chatId, 'Todavía no tienes notas registradas.');
       } else {
         await sendMessage(chatId, `📋 Tus notas (ciclo actual):\n\n${bloque}`);
+      }
+    }
+  } else if (text === '/ciclos') {
+    const { data } = await supabase.from('usuarios').select('*').eq('chat_id', chatId).maybeSingle();
+    if (!data) {
+      await sendMessage(chatId, 'No estás registrado.', botonRegistrar());
+    } else {
+      const periodos = (data.periodos_disponibles ?? []) as string[];
+      if (periodos.length === 0) {
+        await sendMessage(
+          chatId,
+          'Todavía no tengo la lista de tus ciclos — espera al próximo chequeo (cada 5 min) e intenta de nuevo.',
+        );
+      } else {
+        const botones = periodos.map((codper) => [{ text: etiquetaPeriodo(codper), callback_data: `ciclo:${codper}` }]);
+        await sendMessage(chatId, '📚 Elige un ciclo para ver tus notas de ese período:', { inline_keyboard: botones });
       }
     }
   } else if (text.startsWith('/simular')) {
