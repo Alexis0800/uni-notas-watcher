@@ -93,12 +93,14 @@ así que las páginas del formulario y el simulador viven acá.
 
 Después de esto, **actualiza las URLs hardcodeadas** en
 `supabase/functions/telegram-webhook/index.ts` (`REGISTRO_WEBAPP_URL`,
-`SIMULADOR_URL`) y en `public/simulador.html` (`API_URL`) y en
-`public/registro.html` (`API_URL`) para que apunten a tu propio dominio
-de GitHub Pages y de Supabase — son URLs fijas en el código porque las
-Mini Apps no tienen forma de conocer esos valores en tiempo de
-ejecución (no hay variables de entorno en una página estática). Vuelve
-a desplegar las funciones (Paso 4) después de cambiarlas.
+`SIMULADOR_URL`), en `check-all-users.js` (`PAGES_BASE`, usado por el
+botón de registro del aviso de desactivación) y en `public/simulador.html`
+(`API_URL`) y en `public/registro.html` (`API_URL`) para que apunten a
+tu propio dominio de GitHub Pages y de Supabase — son URLs fijas en el
+código porque las Mini Apps no tienen forma de conocer esos valores en
+tiempo de ejecución (no hay variables de entorno en una página
+estática). Vuelve a desplegar las funciones (Paso 4) después de
+cambiarlas.
 
 ## Paso 6 — Conectar el webhook de Telegram
 
