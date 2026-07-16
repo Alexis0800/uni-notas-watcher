@@ -27,6 +27,7 @@
     color: var(--tg-theme-hint-color, #888888);
     margin: 16px 0 6px;
   }
+  .campo { position: relative; }
   input {
     width: 100%;
     box-sizing: border-box;
@@ -36,6 +37,22 @@
     border: 1px solid var(--tg-theme-hint-color, #cccccc);
     background: var(--tg-theme-secondary-bg-color, #f2f2f2);
     color: var(--tg-theme-text-color, #111111);
+  }
+  input.valido { border-color: #34a853; }
+  input.invalido { border-color: #e05353; }
+  input:disabled { opacity: 0.6; }
+  #password { padding-right: 44px; }
+  .alternar-clave {
+    position: absolute;
+    right: 6px;
+    top: 6px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    font-size: 16px;
+    cursor: pointer;
+    color: var(--tg-theme-hint-color, #888888);
   }
   #status {
     margin-top: 20px;
@@ -49,16 +66,21 @@
 <body>
   <h1>Registrar mi usuario de INTRALU</h1>
   <p class="hint">
-    Tu contraseña se cifra al llegar al servidor y nunca queda como mensaje
-    de texto en el chat.
+    🔒 Tu contraseña se cifra al llegar al servidor y nunca queda como
+    mensaje de texto en el chat.
   </p>
 
   <form id="form">
     <label for="codigo">Código UNI</label>
-    <input id="codigo" name="codigo" type="text" autocomplete="username" placeholder="20201234A" required />
+    <div class="campo">
+      <input id="codigo" name="codigo" type="text" autocomplete="username" placeholder="20201234A" required />
+    </div>
 
     <label for="password">Contraseña de INTRALU</label>
-    <input id="password" name="password" type="password" autocomplete="current-password" required />
+    <div class="campo">
+      <input id="password" name="password" type="password" autocomplete="current-password" required />
+      <button type="button" class="alternar-clave" id="alternarClave" aria-label="Mostrar contraseña">👁</button>
+    </div>
   </form>
 
   <div id="status"></div>
@@ -74,6 +96,31 @@
     const statusEl = document.getElementById('status');
     const codigoEl = document.getElementById('codigo');
     const passwordEl = document.getElementById('password');
+    const alternarClaveEl = document.getElementById('alternarClave');
+
+    alternarClaveEl.addEventListener('click', () => {
+      const oculta = passwordEl.type === 'password';
+      passwordEl.type = oculta ? 'text' : 'password';
+      alternarClaveEl.textContent = oculta ? '🙈' : '👁';
+      alternarClaveEl.setAttribute('aria-label', oculta ? 'Ocultar contraseña' : 'Mostrar contraseña');
+    });
+
+    function marcarValidez(input) {
+      const valido = input.value.trim().length > 0;
+      input.classList.toggle('valido', valido);
+      input.classList.toggle('invalido', !valido && input.dataset.tocado === '1');
+    }
+
+    [codigoEl, passwordEl].forEach((input) => {
+      input.addEventListener('input', () => {
+        input.dataset.tocado = '1';
+        marcarValidez(input);
+      });
+      input.addEventListener('blur', () => {
+        input.dataset.tocado = '1';
+        marcarValidez(input);
+      });
+    });
 
     function setStatus(text, kind) {
       statusEl.textContent = text;
@@ -84,11 +131,23 @@
       return codigoEl.value.trim().length > 0 && passwordEl.value.length > 0;
     }
 
+    function bloquearFormulario(bloqueado) {
+      codigoEl.disabled = bloqueado;
+      passwordEl.disabled = bloqueado;
+      alternarClaveEl.disabled = bloqueado;
+    }
+
     async function enviar() {
+      codigoEl.dataset.tocado = '1';
+      passwordEl.dataset.tocado = '1';
+      marcarValidez(codigoEl);
+      marcarValidez(passwordEl);
+
       if (!validar()) {
         setStatus('Completa código y contraseña.', 'error');
         return;
       }
+      bloquearFormulario(true);
       tg.MainButton.showProgress();
       setStatus('Registrando...', '');
       try {
@@ -109,10 +168,12 @@
         } else {
           setStatus('❌ ' + (data.error || 'No se pudo registrar.'), 'error');
           tg.MainButton.hideProgress();
+          bloquearFormulario(false);
         }
       } catch (err) {
         setStatus('❌ Error de red, intenta de nuevo.', 'error');
         tg.MainButton.hideProgress();
+        bloquearFormulario(false);
       }
     }
 
