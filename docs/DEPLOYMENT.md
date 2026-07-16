@@ -163,10 +163,12 @@ valor del token de arriba como secret de **Supabase** (no de GitHub):
 pnpm dlx supabase secrets set GITHUB_DISPATCH_TOKEN=el-mismo-token-de-arriba
 ```
 
-Con esto, `telegram-webhook` dispara una corrida apenas alguien se
-registra, en vez de esperar a la próxima corrida encadenada. Es
-opcional — sin este secret el registro funciona igual, solo que la
-primera revisión llega en la corrida siguiente en vez de casi al toque.
+Con esto, `registro-webapp` (para registros por formulario) y
+`telegram-webhook` (para `/registrar` directo) disparan una corrida
+apenas alguien se registra, en vez de esperar a la próxima corrida
+encadenada. Es opcional — sin este secret el registro funciona igual,
+solo que la primera revisión llega en la corrida siguiente en vez de
+casi al toque.
 
 ## Paso 9 — Probar
 
