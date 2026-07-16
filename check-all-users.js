@@ -1,12 +1,11 @@
 require('dotenv').config();
-const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 const { login, fetchCursosMatriculados, fetchEvaluaciones, formatearNota } = require('./lib/session');
 const { decrypt } = require('./lib/crypto');
+const { sendTelegram, agruparPorCurso } = require('./lib/notificaciones');
 
 const CONCURRENCY = Number(process.env.CONCURRENCY) || 15;
 const FAILURE_THRESHOLD = 3;
-const NOTA_APROBATORIA = 10;
 
 // Medido desde corridas reales de GitHub Actions (no desde una máquina
 // local — la ruta de red hacia alumnos.uni.edu.pe es más lenta desde ahí):
@@ -44,60 +43,13 @@ function botonRegistrar() {
   };
 }
 
-async function sendTelegram(token, chatId, text, replyMarkup) {
-  await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
-    chat_id: chatId,
-    text,
-    parse_mode: 'HTML',
-    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
-  });
-}
-
-// 🟢 si aprobó (>=10), 🔴 si desaprobó, anuló (0A) o no se presentó (NSP).
-// Telegram no soporta color de texto en sus mensajes — esto es lo más
-// parecido que se puede hacer.
-function emoji(ev) {
-  if (!ev.anulada && ev.nota !== null && ev.nota >= NOTA_APROBATORIA) return '🟢';
-  return '🔴';
-}
-
-function emojiValor(valor) {
-  const n = Number(valor);
-  return !Number.isNaN(n) && n >= NOTA_APROBATORIA ? '🟢' : '🔴';
-}
-
-// Agrupa evaluaciones por curso para que el nombre del curso no se repita
-// en cada línea — una vez el curso, las evaluaciones sangradas debajo.
-// Cierra cada bloque con el PP y el promedio del curso que ya calcula
-// INTRALU (cursosMeta[cursoKey].promedios, ver docs/GRADING-RULES.md) —
-// nunca se recalcula acá, así nadie tiene que sacar la cuenta a mano. El PP
-// solo se muestra si el curso tiene fórmula de prácticas (algunos no).
-function agruparPorCurso(evaluaciones, cursosMeta) {
-  const porCurso = new Map();
-  for (const ev of evaluaciones) {
-    if (!porCurso.has(ev.cursoKey)) porCurso.set(ev.cursoKey, []);
-    porCurso.get(ev.cursoKey).push(ev);
-  }
-  const bloques = [];
-  for (const [cursoKey, evs] of porCurso) {
-    const lineas = evs.map((e) => `   ${emoji(e)} ${e.descripcion}: <b>${e.valor}</b>`);
-    const meta = cursosMeta[cursoKey];
-    const pp = meta?.formulas?.practicas ? meta?.promedios?.promedio_practicas : null;
-    const final = meta?.promedios?.promedio_final;
-    const lineaPP = pp != null ? `\n   📊 PP (prácticas): ${emojiValor(pp)} <b>${pp}</b>` : '';
-    const lineaFinal = final != null ? `\n   📊 Promedio del curso: ${emojiValor(final)} <b>${final}</b>` : '';
-    bloques.push(`📘 <b>${evs[0].curso}</b>\n${lineas.join('\n')}${lineaPP}${lineaFinal}`);
-  }
-  return bloques.join('\n\n');
-}
-
 async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
   const { id, chat_id, codigo_uni, password_encrypted, last_grades, seeded } = usuario;
 
   try {
     const password = await decrypt(password_encrypted, encryptionKey);
     const client = await login(codigo_uni, password);
-    const { codper, csrfToken, cursos } = await fetchCursosMatriculados(client);
+    const { codper, csrfToken, cursos, periodos } = await fetchCursosMatriculados(client);
 
     const currentMap = {};
     const cursosMeta = {};
@@ -170,6 +122,7 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
       .update({
         last_grades: currentMap,
         cursos: cursosMeta,
+        periodos_disponibles: periodos,
         seeded: true,
         consecutive_failures: 0,
         updated_at: new Date().toISOString(),
