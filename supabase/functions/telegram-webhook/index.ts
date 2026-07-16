@@ -49,6 +49,31 @@ async function deleteMessage(chatId: number, messageId: number) {
   }
 }
 
+// Dispara la corrida de check-grade.yml ya mismo en vez de esperar a la
+// cadena de 5 min — best-effort: si falla (falta el secret, GitHub no
+// responde), el registro ya se guardó bien igual, y la cadena normal lo
+// recoge de todas formas (ver docs/SCALING.md).
+async function dispararChequeoInmediato() {
+  const token = Deno.env.get('GITHUB_DISPATCH_TOKEN');
+  if (!token) return;
+  try {
+    await fetch(
+      'https://api.github.com/repos/Alexis0800/uni-notas-watcher/actions/workflows/check-grade.yml/dispatches',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ref: 'main' }),
+      },
+    );
+  } catch {
+    // best-effort, no pasa nada si falla
+  }
+}
+
 function botonRegistrar() {
   return {
     inline_keyboard: [[{ text: '📝 Registrarme', web_app: { url: REGISTRO_WEBAPP_URL } }]],
@@ -194,9 +219,10 @@ Deno.serve(async (req) => {
         console.error(error);
         await sendMessage(chatId, '❌ No pude guardar tu registro, intenta de nuevo en un rato.');
       } else {
+        await dispararChequeoInmediato();
         await sendMessage(
           chatId,
-          `✅ Registrado con código ${codigo.toUpperCase()}. En los próximos minutos hago la primera revisión para guardar tu estado actual (sin avisarte nada todavía) — si tu código o contraseña están mal, te aviso aquí. Desde la revisión siguiente ya te aviso solo de notas nuevas de verdad.`,
+          `✅ Registrado con código <b>${codigo.toUpperCase()}</b>.\n\nYa estoy revisando tus notas — te mando tu estado actual por acá en cuanto termine.\nSi tu código o contraseña están mal, te aviso aquí también.`,
         );
       }
     }
@@ -213,10 +239,11 @@ Deno.serve(async (req) => {
         chatId,
         [
           `Código: ${data.codigo_uni}`,
-          `Activo: ${data.active ? 'sí' : 'no (tu contraseña parece estar mal, usa /registrar de nuevo)'}`,
+          `Activo: ${data.active ? 'sí' : 'no (tu contraseña parece estar mal)'}`,
           `Evaluaciones registradas: ${evaluaciones}`,
           `Última actualización: ${formatearFecha(data.updated_at)}`,
         ].join('\n'),
+        data.active ? undefined : botonRegistrar(),
       );
     }
   } else if (text === '/notas') {
