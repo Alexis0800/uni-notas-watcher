@@ -12,6 +12,14 @@ create table if not exists usuarios (
   -- Fórmulas y promedios por curso del ciclo actual (para /simular), clave
   -- "codcur-seccion": { nombre, formulas: {practicas, teoria}, promedios }.
   cursos jsonb not null default '{}'::jsonb,
+  -- Lista de códigos de período que trae el selector de INTRALU (ej.
+  -- ["20261","20252",...]) — se llena gratis durante el chequeo normal del
+  -- ciclo actual, la usa /ciclos para armar los botones.
+  periodos_disponibles jsonb not null default '[]'::jsonb,
+  -- Caché permanente de ciclos pasados ya consultados por /ciclos, clave
+  -- codper: mismo formato que `cursos`. Nunca lo toca el chequeo de 5 min
+  -- (eso solo escribe `cursos`) — solo fetch-historial.js, bajo demanda.
+  historial jsonb not null default '{}'::jsonb,
   -- false hasta el primer chequeo tras registrarse: ese primer chequeo solo
   -- guarda el estado base sin notificar, para no avisar "nota nueva" de
   -- notas que la persona ya tenía antes de registrarse.
@@ -27,3 +35,11 @@ create table if not exists usuarios (
 -- de GitHub Actions, y que nunca se expone al público) puede tocarla, porque
 -- ese key ignora RLS por diseño de Supabase.
 alter table usuarios enable row level security;
+
+-- Migración para una base ya desplegada (el create table de arriba solo
+-- aplica a instalaciones nuevas) — pega y corre esto una vez en el SQL
+-- Editor de tu proyecto de Supabase si tu tabla `usuarios` ya existía antes
+-- de este cambio:
+--
+-- alter table usuarios add column if not exists periodos_disponibles jsonb not null default '[]'::jsonb;
+-- alter table usuarios add column if not exists historial jsonb not null default '{}'::jsonb;
