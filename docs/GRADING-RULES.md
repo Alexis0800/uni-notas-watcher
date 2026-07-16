@@ -77,7 +77,7 @@ teoria:    "( PP + EP + 2.EF )/  4"
   curso tiene una fórmula de un solo término, ej. `( PP )/  1`).
 
 El evaluador de fórmulas (tokenizador + parser recursivo, sin ejecutar
-el texto como código) está implementado en tres lugares — ver
+el texto como código) vive en un solo lugar — ver
 [`ARCHITECTURE.md`](ARCHITECTURE.md#por-qué-hay-código-duplicado-entre-node-y-deno).
 
 ### Variables que la fórmula menciona pero que todavía no existen
@@ -88,6 +88,34 @@ ciclo). El simulador trata la fórmula como fuente de verdad: si una
 variable no tiene evaluación real, igual se ofrece como campo editable,
 mostrando el código de la variable como nombre (no hay descripción real
 que mostrar todavía).
+
+## Promedios que ya calcula INTRALU
+
+La misma respuesta que trae las fórmulas también trae un objeto
+`promedios` — encontrado inspeccionando datos reales ya guardados
+(`cursos.<clave>.promedios` en la tabla `usuarios`), no estaba
+documentado hasta ahora porque nada lo mostraba todavía:
+
+```json
+"promedios": {
+  "promedio_final": "16.8",
+  "nota_asistencia": "0",
+  "promedio_practicas": "15.333"
+}
+```
+
+Todo viene como **texto** (no número), y `promedio_final` está
+disponible incluso cuando el curso todavía tiene evaluaciones
+pendientes — en ese caso es el promedio "hasta ahora", tratando lo que
+falta como si aportara 0 (el mismo criterio que usa el simulador para
+las notas pendientes vacías). `promedio_practicas` coincide con el `PP`
+que calcula el simulador con la fórmula `practicas` — así se confirmó
+que el evaluador de fórmulas da el mismo resultado que INTRALU.
+
+Como esto ya es un cálculo real de INTRALU (no una aproximación local),
+`/notas` y las notificaciones de notas nuevas lo muestran tal cual en
+vez de recalcularlo — evita duplicar el evaluador de fórmulas en Node
+o en el bot.
 
 ## Examen Sustitutorio (ES)
 

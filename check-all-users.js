@@ -63,16 +63,23 @@ function emoji(ev) {
 
 // Agrupa evaluaciones por curso para que el nombre del curso no se repita
 // en cada línea — una vez el curso, las evaluaciones sangradas debajo.
-function agruparPorCurso(evaluaciones) {
+// Cierra cada bloque con el promedio del curso que ya calcula INTRALU
+// (cursosMeta[cursoKey].promedios.promedio_final, ver docs/GRADING-RULES.md)
+// — nunca se recalcula acá, así nadie tiene que sacar la cuenta a mano.
+function agruparPorCurso(evaluaciones, cursosMeta) {
   const porCurso = new Map();
   for (const ev of evaluaciones) {
-    if (!porCurso.has(ev.curso)) porCurso.set(ev.curso, []);
-    porCurso.get(ev.curso).push(ev);
+    if (!porCurso.has(ev.cursoKey)) porCurso.set(ev.cursoKey, []);
+    porCurso.get(ev.cursoKey).push(ev);
   }
   const bloques = [];
-  for (const [curso, evs] of porCurso) {
+  for (const [cursoKey, evs] of porCurso) {
     const lineas = evs.map((e) => `   ${emoji(e)} ${e.descripcion}: <b>${e.valor}</b>`);
-    bloques.push(`📘 <b>${curso}</b>\n${lineas.join('\n')}`);
+    const promedio = cursosMeta[cursoKey]?.promedios?.promedio_final;
+    const resumen = promedio != null
+      ? `\n   📊 Promedio del curso: ${Number(promedio) >= NOTA_APROBATORIA ? '🟢' : '🔴'} <b>${promedio}</b>`
+      : '';
+    bloques.push(`📘 <b>${evs[0].curso}</b>\n${lineas.join('\n')}${resumen}`);
   }
   return bloques.join('\n\n');
 }
@@ -113,6 +120,7 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
         if (!ev.fecha) continue;
         const key = `${codper}:${cursoKey}:${ev.camnot}`;
         currentMap[key] = {
+          cursoKey,
           curso: curso.nombre,
           descripcion: ev.descripcion,
           nota: ev.nota,
@@ -136,7 +144,7 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
         await sendTelegram(
           telegramToken,
           chat_id,
-          `🎓 Nueva(s) nota(s) en INTRALU:\n\n${agruparPorCurso(cambios)}`,
+          `🎓 Nueva(s) nota(s) en INTRALU:\n\n${agruparPorCurso(cambios, cursosMeta)}`,
         );
       }
     } else {
@@ -145,7 +153,7 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
         telegramToken,
         chat_id,
         todas.length > 0
-          ? `📋 Estas son tus notas actuales en INTRALU:\n\n${agruparPorCurso(todas)}\n\nDesde ahora te aviso cuando aparezca algo nuevo.`
+          ? `📋 Estas son tus notas actuales en INTRALU:\n\n${agruparPorCurso(todas, cursosMeta)}\n\nDesde ahora te aviso cuando aparezca algo nuevo.`
           : 'Todavía no tienes notas registradas en INTRALU para este ciclo. Desde ahora te aviso cuando aparezca algo nuevo.',
       );
     }

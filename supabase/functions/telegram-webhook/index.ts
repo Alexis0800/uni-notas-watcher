@@ -86,21 +86,32 @@ function botonRegistrar() {
 const AYUDA = `Notificador de notas UNI (INTRALU)
 
 Comandos:
-/registrar — registra o actualiza tu usuario de INTRALU (abre un formulario)
-/notas — muestra todas tus notas registradas hasta ahora
-/simular — simula tu nota final de un curso con las evaluaciones que aún faltan
-/estado — ve si estás activo y cuándo se revisó por última vez
-/baja — borra tu registro y tu contraseña
-/ayuda — este mensaje
+<b>/registrar</b> — registra o actualiza tu usuario de INTRALU (abre un formulario)
+<b>/notas</b> — muestra todas tus notas registradas hasta ahora
+<b>/simular</b> — simula tu nota final de un curso con las evaluaciones que aún faltan
+<b>/estado</b> — ve si estás activo y cuándo se revisó por última vez
+<b>/baja</b> — borra tu registro y tu contraseña
+<b>/ayuda</b> — este mensaje
 
-Tu contraseña se guarda cifrada, nunca en texto plano. El formulario de
-registro no la deja como mensaje de texto en este chat.`;
+🔒 Tu contraseña se guarda cifrada, nunca en texto plano. El formulario
+de registro no la deja como mensaje de texto en este chat.`;
 
-type Evaluacion = { curso: string; descripcion: string; nota: number | null; valor: string; anulada: boolean };
-type EvaluacionCurso = { variable: string; descripcion: string; nota: number | null; anulada: boolean; fecha: string | null };
+type EvaluacionCurso = {
+  variable: string;
+  descripcion: string;
+  nota: number | null;
+  anulada: boolean;
+  valor: string | null;
+  fecha: string | null;
+};
+// Ya calculado por INTRALU, nunca se recalcula acá — ver
+// docs/GRADING-RULES.md#promedios-que-ya-calcula-intralu. Todo llega como
+// texto (no número).
+type Promedios = { promedio_final?: string; promedio_practicas?: string; nota_asistencia?: string };
 type CursoMeta = {
   nombre: string;
   formulas: { practicas: string | null; teoria: string | null } | null;
+  promedios: Promedios | null;
   evaluaciones: EvaluacionCurso[];
 };
 
@@ -112,16 +123,21 @@ function emoji(valor: string): string {
   return !Number.isNaN(n) && n >= NOTA_APROBATORIA ? '🟢' : '🔴';
 }
 
-function agruparPorCurso(evaluaciones: Evaluacion[]): string {
-  const porCurso = new Map<string, Evaluacion[]>();
-  for (const ev of evaluaciones) {
-    if (!porCurso.has(ev.curso)) porCurso.set(ev.curso, []);
-    porCurso.get(ev.curso)!.push(ev);
-  }
+// Solo muestra evaluaciones ya calificadas (valor !== null — descarta las
+// pendientes, mismo criterio que usa check-all-users.js para /notas y las
+// notificaciones). Cierra cada curso con su promedio ya calculado por
+// INTRALU (ver docs/GRADING-RULES.md#promedios-que-ya-calcula-intralu).
+function agruparPorCurso(cursos: Record<string, CursoMeta>): string {
   const bloques: string[] = [];
-  for (const [curso, evs] of porCurso) {
-    const lineas = evs.map((e) => `   ${emoji(e.valor)} ${e.descripcion}: <b>${e.valor}</b>`);
-    bloques.push(`📘 <b>${curso}</b>\n${lineas.join('\n')}`);
+  for (const meta of Object.values(cursos)) {
+    const evaluadas = meta.evaluaciones.filter((ev) => ev.valor !== null);
+    if (evaluadas.length === 0) continue;
+    const lineas = evaluadas.map((e) => `   ${emoji(e.valor!)} ${e.descripcion}: <b>${e.valor}</b>`);
+    const promedio = meta.promedios?.promedio_final;
+    const resumen = promedio != null
+      ? `\n   📊 Promedio del curso: ${emoji(promedio)} <b>${promedio}</b>`
+      : '';
+    bloques.push(`📘 <b>${meta.nombre}</b>\n${lineas.join('\n')}${resumen}`);
   }
   return bloques.join('\n\n');
 }
@@ -241,9 +257,11 @@ Deno.serve(async (req) => {
       await sendMessage(
         chatId,
         [
-          `Código: ${data.codigo_uni}`,
-          `Activo: ${data.active ? 'sí' : 'no (tu contraseña parece estar mal)'}`,
-          `Evaluaciones registradas: ${evaluaciones}`,
+          '📌 Estado de tu cuenta',
+          '',
+          `Código: <b>${data.codigo_uni}</b>`,
+          `Activo: ${data.active ? '🟢 sí' : '🔴 no (tu contraseña parece estar mal)'}`,
+          `Evaluaciones registradas: <b>${evaluaciones}</b>`,
           `Última actualización: ${formatearFecha(data.updated_at)}`,
         ].join('\n'),
         data.active ? undefined : botonRegistrar(),
@@ -254,11 +272,12 @@ Deno.serve(async (req) => {
     if (!data) {
       await sendMessage(chatId, 'No estás registrado.', botonRegistrar());
     } else {
-      const evaluaciones = Object.values(data.last_grades ?? {}) as Evaluacion[];
-      if (evaluaciones.length === 0) {
+      const cursos = (data.cursos ?? {}) as Record<string, CursoMeta>;
+      const bloque = agruparPorCurso(cursos);
+      if (!bloque) {
         await sendMessage(chatId, 'Todavía no tienes notas registradas.');
       } else {
-        await sendMessage(chatId, `📋 Tus notas (ciclo actual):\n\n${agruparPorCurso(evaluaciones)}`);
+        await sendMessage(chatId, `📋 Tus notas (ciclo actual):\n\n${bloque}`);
       }
     }
   } else if (text.startsWith('/simular')) {
