@@ -87,6 +87,13 @@ function etiquetaPeriodo(codper: string): string {
   return ROMANOS[digito] ? `${anio}-${ROMANOS[digito]}` : `${anio} (ciclo ${digito})`;
 }
 
+// Etiqueta compacta solo para los botones de /ciclos (año de 2 dígitos +
+// dígito de ciclo, ej. "26-1") — el mensaje con las notas sigue usando
+// etiquetaPeriodo() completo.
+function etiquetaCorta(codper: string): string {
+  return `${codper.slice(2, 4)}-${codper.slice(4)}`;
+}
+
 // Responde el toque de un botón para que deje de girar en el cliente de
 // Telegram — sin texto, no hace falta ningún aviso de "espera un momento".
 async function answerCallbackQuery(callbackQueryId: string) {
@@ -378,8 +385,10 @@ Deno.serve(async (req) => {
           'Todavía no tengo la lista de tus ciclos — espera al próximo chequeo (cada 5 min) e intenta de nuevo.',
         );
       } else {
-        const botones = periodos.map((codper) => [{ text: etiquetaPeriodo(codper), callback_data: `ciclo:${codper}` }]);
-        await sendMessage(chatId, '📚 Elige un ciclo para ver tus notas de ese período:', { inline_keyboard: botones });
+        const botones = periodos.map((codper) => ({ text: etiquetaCorta(codper), callback_data: `ciclo:${codper}` }));
+        const filas = [];
+        for (let i = 0; i < botones.length; i += 4) filas.push(botones.slice(i, i + 4));
+        await sendMessage(chatId, '📚 Elige un ciclo para ver tus notas de ese período:', { inline_keyboard: filas });
       }
     }
   } else if (text.startsWith('/simular')) {

@@ -125,6 +125,7 @@ curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/setMyCommands" \
     "commands": [
       {"command": "registrar", "description": "Registrar o actualizar tu usuario de INTRALU"},
       {"command": "notas", "description": "Ver todas tus notas registradas"},
+      {"command": "ciclos", "description": "Consultar tus notas de un ciclo anterior"},
       {"command": "simular", "description": "Simular tu nota final con lo que falta"},
       {"command": "estado", "description": "Ver si estas activo y la ultima revision"},
       {"command": "baja", "description": "Borrar tu registro y tu contrasena"},
