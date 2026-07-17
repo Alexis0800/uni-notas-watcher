@@ -1,8 +1,10 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
-const { login, fetchCursosMatriculados, fetchEvaluaciones, formatearNota, CredentialError } = require('./lib/session');
+const { login, fetchCursosMatriculados, fetchEvaluaciones, formatearNota, CredentialError, isNetworkError } = require('./lib/session');
 const { decrypt } = require('./lib/crypto');
 const { sendTelegram, agruparPorCurso } = require('./lib/notificaciones');
+const { markIntraluDown, markIntraluUp, isIntraluDown } = require('./lib/service-status');
+const fs = require('fs');
 
 const CONCURRENCY = Number(process.env.CONCURRENCY) || 15;
 const FAILURE_THRESHOLD = 3;
@@ -125,16 +127,40 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
         periodos_disponibles: periodos,
         seeded: true,
         consecutive_failures: 0,
+        network_issue_notified: false,
         updated_at: new Date().toISOString(),
       })
       .eq('id', id);
 
+    await markIntraluUp(supabase, telegramToken, process.env.ADMIN_CHAT_ID);
+
     console.log(`✅ ${chat_id} (${codigo_uni}): ${seeded ? `${cambios.length} nota(s) nueva(s)` : 'snapshot inicial enviado'}`);
   } catch (err) {
+    if (isNetworkError(err)) {
+      // INTRALU inalcanzable (ECONNREFUSED, timeout, DNS) — no es culpa del
+      // usuario ni cuenta hacia la desactivación. El cron siguiente lo
+      // reintenta solo (no se toca updated_at, ver cola en main()). A
+      // diferencia de un error desconocido, esto sí se avisa: al admin
+      // siempre (deduplicado), y al usuario una sola vez si es su primer
+      // chequeo tras registrarse.
+      console.error(`🔴 ${chat_id} (${codigo_uni}): ${err.message}`);
+      await markIntraluDown(supabase, telegramToken, process.env.ADMIN_CHAT_ID);
+
+      if (!seeded && !usuario.network_issue_notified) {
+        await sendTelegram(
+          telegramToken,
+          chat_id,
+          '⏳ INTRALU no está respondiendo en este momento (a veces tarda horas en normalizarse). Te aviso apenas pueda revisar tus notas — no hace falta que hagas nada.',
+        ).catch(() => {});
+        await supabase.from('usuarios').update({ network_issue_notified: true }).eq('id', id);
+      }
+      return;
+    }
+
     if (!(err instanceof CredentialError)) {
-      // Timeout, sitio caído, HTML cambiado, etc. — no es un fallo de
-      // credenciales, así que no cuenta hacia la desactivación. El cron
-      // siguiente lo reintenta solo (ver comentario sobre la cola en main()).
+      // Timeout de otro tipo, HTML cambiado, etc. — no es un fallo de
+      // credenciales ni de red, así que no cuenta hacia la desactivación. El
+      // cron siguiente lo reintenta solo (ver comentario sobre la cola en main()).
       console.error(`⏳ ${chat_id} (${codigo_uni}): ${err.message}`);
       return;
     }
@@ -209,6 +235,16 @@ async function main() {
     console.log(`Listo en ${elapsedSeconds.toFixed(1)}s (${(elapsedSeconds / usuarios.length).toFixed(1)}s/usuario).`);
   } else {
     console.log('Listo (sin usuarios que revisar).');
+  }
+
+  // Le dice al step "Encadenar la siguiente corrida" de check-grade.yml si
+  // debe usar el ciclo corto (60s) en vez del normal (300s) — ver ese
+  // workflow. GITHUB_OUTPUT no existe corriendo local (ej. pnpm run
+  // check-all a mano), así que esto es un no-op fuera de Actions.
+  const down = await isIntraluDown(supabase);
+  console.log(down ? '🔴 INTRALU sigue caído.' : '🟢 INTRALU está respondiendo.');
+  if (process.env.GITHUB_OUTPUT) {
+    fs.appendFileSync(process.env.GITHUB_OUTPUT, `intralu_down=${down}\n`);
   }
 }
 
