@@ -146,13 +146,27 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
       console.error(`🔴 ${chat_id} (${codigo_uni}): ${err.message}`);
       await markIntraluDown(supabase, telegramToken, process.env.ADMIN_CHAT_ID);
 
-      if (!seeded && !usuario.network_issue_notified) {
-        await sendTelegram(
-          telegramToken,
-          chat_id,
-          '⏳ INTRALU no está respondiendo en este momento (a veces tarda horas en normalizarse). Te aviso apenas pueda revisar tus notas — no hace falta que hagas nada.',
-        ).catch(() => {});
-        await supabase.from('usuarios').update({ network_issue_notified: true }).eq('id', id);
+      if (!seeded) {
+        // Update atómico como filtro de carrera (mismo patrón que
+        // markIntraluDown/markIntraluUp): check-grade.yml y
+        // check-new-registration.yml corren en concurrency groups
+        // separados, así que pueden revisar al mismo usuario nuevo casi
+        // simultáneamente. Solo la corrida cuyo UPDATE efectivamente
+        // cambió la fila (data no vacío) manda el mensaje — la otra ve
+        // 0 filas y no avisa dos veces.
+        const { data } = await supabase
+          .from('usuarios')
+          .update({ network_issue_notified: true })
+          .eq('id', id)
+          .eq('network_issue_notified', false)
+          .select();
+        if (data && data.length > 0) {
+          await sendTelegram(
+            telegramToken,
+            chat_id,
+            '⏳ INTRALU no está respondiendo en este momento (a veces tarda horas en normalizarse). Te aviso apenas pueda revisar tus notas — no hace falta que hagas nada.',
+          ).catch(() => {});
+        }
       }
       return;
     }
