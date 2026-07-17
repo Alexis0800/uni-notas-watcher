@@ -181,7 +181,7 @@ async function manejarCallbackQuery(callbackQuery: any) {
     await sendMessage(
       chatId,
       bloque
-        ? `📚 Tus notas del ciclo ${etiqueta}:\n\n${bloque}`
+        ? `📚 Tus notas del ciclo ${etiqueta}:\n\n${bloque}\n\n📌 Datos guardados de cuando se consultó este ciclo, no en vivo.`
         : `No encontré notas registradas en el ciclo ${etiqueta}.`,
     );
   } else {
@@ -399,10 +399,11 @@ Deno.serve(async (req) => {
     } else {
       const cursos = (data.cursos ?? {}) as Record<string, CursoMeta>;
       const bloque = agruparPorCurso(cursos);
+      const actualizado = `\n\nÚltima actualización: ${formatearFecha(data.updated_at)}`;
       if (!bloque) {
-        await sendMessage(chatId, 'Todavía no tienes notas registradas.');
+        await sendMessage(chatId, `Todavía no tienes notas registradas.${actualizado}`);
       } else {
-        await sendMessage(chatId, `📋 Tus notas (ciclo actual):\n\n${bloque}`);
+        await sendMessage(chatId, `📋 Tus notas (ciclo actual):\n\n${bloque}${actualizado}`);
       }
     }
   } else if (text === '/ciclos') {
