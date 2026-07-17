@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
-const { login, fetchCursosMatriculados, fetchEvaluaciones, formatearNota } = require('./lib/session');
+const { login, fetchCursosMatriculados, fetchEvaluaciones, formatearNota, CredentialError } = require('./lib/session');
 const { decrypt } = require('./lib/crypto');
 const { sendTelegram, agruparPorCurso } = require('./lib/notificaciones');
 
@@ -131,6 +131,14 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
 
     console.log(`✅ ${chat_id} (${codigo_uni}): ${seeded ? `${cambios.length} nota(s) nueva(s)` : 'snapshot inicial enviado'}`);
   } catch (err) {
+    if (!(err instanceof CredentialError)) {
+      // Timeout, sitio caído, HTML cambiado, etc. — no es un fallo de
+      // credenciales, así que no cuenta hacia la desactivación. El cron
+      // siguiente lo reintenta solo (ver comentario sobre la cola en main()).
+      console.error(`⏳ ${chat_id} (${codigo_uni}): ${err.message}`);
+      return;
+    }
+
     const failures = (usuario.consecutive_failures || 0) + 1;
     console.error(`❌ ${chat_id} (${codigo_uni}): ${err.message}`);
 
