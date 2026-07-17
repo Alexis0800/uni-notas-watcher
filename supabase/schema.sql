@@ -26,6 +26,11 @@ create table if not exists usuarios (
   seeded boolean not null default false,
   active boolean not null default true,
   consecutive_failures integer not null default 0,
+  -- true si ya se le avisó una vez que INTRALU no respondía durante su
+  -- primer chequeo (registro nuevo) — evita repetir ese aviso en cada
+  -- reintento de 5 min mientras la caída dure. Se resetea a false en
+  -- cuanto un chequeo tiene éxito.
+  network_issue_notified boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -36,6 +41,19 @@ create table if not exists usuarios (
 -- ese key ignora RLS por diseño de Supabase.
 alter table usuarios enable row level security;
 
+-- Una fila por servicio externo trackeado (hoy solo INTRALU). is_down +
+-- since permiten avisar al admin una sola vez por caída/recuperación en vez
+-- de una vez por usuario o por corrida del cron — ver lib/service-status.js.
+create table if not exists service_status (
+  service text primary key,
+  is_down boolean not null default false,
+  since timestamptz,
+  updated_at timestamptz not null default now()
+);
+insert into service_status (service) values ('intralu') on conflict do nothing;
+
+alter table service_status enable row level security;
+
 -- Migración para una base ya desplegada (el create table de arriba solo
 -- aplica a instalaciones nuevas) — pega y corre esto una vez en el SQL
 -- Editor de tu proyecto de Supabase si tu tabla `usuarios` ya existía antes
@@ -43,3 +61,13 @@ alter table usuarios enable row level security;
 --
 -- alter table usuarios add column if not exists periodos_disponibles jsonb not null default '[]'::jsonb;
 -- alter table usuarios add column if not exists historial jsonb not null default '{}'::jsonb;
+-- alter table usuarios add column if not exists network_issue_notified boolean not null default false;
+--
+-- create table if not exists service_status (
+--   service text primary key,
+--   is_down boolean not null default false,
+--   since timestamptz,
+--   updated_at timestamptz not null default now()
+-- );
+-- insert into service_status (service) values ('intralu') on conflict do nothing;
+-- alter table service_status enable row level security;
