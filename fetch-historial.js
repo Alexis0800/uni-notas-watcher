@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
-const { login, fetchCursosMatriculados, fetchEvaluaciones, formatearNota } = require('./lib/session');
+const { login, fetchCursosMatriculados, fetchEvaluaciones, formatearNota, CredentialError, isNetworkError } = require('./lib/session');
 const { decrypt } = require('./lib/crypto');
 const { sendTelegram, agruparPorCurso, etiquetaPeriodo } = require('./lib/notificaciones');
 
@@ -86,11 +86,21 @@ async function main() {
     console.log(`✅ Historial de ${CODPER} guardado para chat_id ${chatId}`);
   } catch (err) {
     console.error(`❌ chat_id ${chatId}, codper ${CODPER}:`, err.message);
-    await sendTelegram(
-      TELEGRAM_TOKEN,
-      chatId,
-      `❌ No pude revisar el ciclo ${etiquetaPeriodo(CODPER)}: ${err.message}`,
-    ).catch(() => {});
+
+    // El usuario no necesita ver "timeout of 20000ms exceeded" ni otros
+    // detalles técnicos — el mensaje crudo (err.message) queda solo en el
+    // log de GitHub Actions (arriba) para diagnóstico.
+    const etiqueta = etiquetaPeriodo(CODPER);
+    let mensaje;
+    if (isNetworkError(err)) {
+      mensaje = `❌ No pude conectarme a INTRALU para revisar el ciclo ${etiqueta} — el sitio no está respondiendo en este momento. Intenta de nuevo más tarde.`;
+    } else if (err instanceof CredentialError) {
+      mensaje = `❌ No pude iniciar sesión en INTRALU para revisar el ciclo ${etiqueta}. Revisa tu código y contraseña con /registrar.`;
+    } else {
+      mensaje = `❌ No pude revisar el ciclo ${etiqueta}. Intenta de nuevo más tarde.`;
+    }
+
+    await sendTelegram(TELEGRAM_TOKEN, chatId, mensaje).catch(() => {});
     process.exit(1);
   }
 }
