@@ -399,9 +399,16 @@ Deno.serve(async (req) => {
     } else {
       const cursos = (data.cursos ?? {}) as Record<string, CursoMeta>;
       const bloque = agruparPorCurso(cursos);
-      const actualizado = `\n\nÚltima actualización: ${formatearFecha(data.updated_at)}`;
+      // Solo mostrar la fecha si ya hubo al menos un chequeo exitoso
+      // (seeded=true) — si no, updated_at todavía es la fecha de registro,
+      // no de un chequeo real, y mostrarla sería engañoso (ej. durante una
+      // caída larga de INTRALU antes del primer chequeo exitoso).
+      const actualizado = data.seeded ? `\n\nÚltima actualización: ${formatearFecha(data.updated_at)}` : '';
       if (!bloque) {
-        await sendMessage(chatId, `Todavía no tienes notas registradas.${actualizado}`);
+        const mensaje = data.seeded
+          ? `Todavía no tienes notas registradas.${actualizado}`
+          : 'Todavía no pude revisar tus notas por primera vez — te aviso apenas termine.';
+        await sendMessage(chatId, mensaje);
       } else {
         await sendMessage(chatId, `📋 Tus notas (ciclo actual):\n\n${bloque}${actualizado}`);
       }
