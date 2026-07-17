@@ -36,11 +36,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run check-all-users
+        id: check
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           CREDENTIALS_ENCRYPTION_KEY: ${{ secrets.CREDENTIALS_ENCRYPTION_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
         run: pnpm run check-all
 
       # El GITHUB_TOKEN por defecto NO puede disparar workflow_dispatch —
@@ -49,20 +51,33 @@ jobs:
       # (WORKFLOW_DISPATCH_TOKEN). Sin ese secret, este paso simplemente no
       # hace nada y se depende del schedule de respaldo de arriba (~1h).
       # Ver docs/SCALING.md para cómo crear el token.
-      - name: Encadenar la siguiente corrida en ~5 min
+      # Ciclo normal de 300s (5 min). Mientras INTRALU esté caído (según lo
+      # que escribió el step "check" en $GITHUB_OUTPUT, ver
+      # check-all-users.js#main), usa un ciclo corto de 60s para detectar la
+      # recuperación rápido sin necesitar un chequeo de salud aparte — ver
+      # docs/superpowers/specs/2026-07-17-avisos-caida-intralu-design.md,
+      # sección "Alternativas consideradas".
+      - name: Encadenar la siguiente corrida
         if: always()
         env:
           DISPATCH_TOKEN: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
+          INTRALU_DOWN: ${{ steps.check.outputs.intralu_down }}
         run: |
           if [ -z "$DISPATCH_TOKEN" ]; then
             echo "⚠️ Falta el secret WORKFLOW_DISPATCH_TOKEN — no se encadena la siguiente corrida."
             exit 0
           fi
 
+          ciclo=300
+          if [ "$INTRALU_DOWN" = "true" ]; then
+            ciclo=60
+            echo "INTRALU está caído — usando ciclo corto de ${ciclo}s."
+          fi
+
           elapsed=$(( $(date +%s) - JOB_START ))
-          sleep_for=$(( 300 - elapsed ))
+          sleep_for=$(( ciclo - elapsed ))
           if [ "$sleep_for" -gt 0 ]; then
-            echo "Esperando ${sleep_for}s para completar el ciclo de 5 min..."
+            echo "Esperando ${sleep_for}s para completar el ciclo de ${ciclo}s..."
             sleep "$sleep_for"
           fi
 
