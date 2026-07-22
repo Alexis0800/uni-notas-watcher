@@ -44,10 +44,13 @@ alter table usuarios enable row level security;
 -- Una fila por servicio externo trackeado (hoy solo INTRALU). is_down +
 -- since permiten avisar al admin una sola vez por caída/recuperación en vez
 -- de una vez por usuario o por corrida del cron — ver lib/service-status.js.
+-- down_notified: false mientras la caída no cruzó el umbral mínimo de aviso
+-- (10 min) — evita spamear con blips cortos que se recuperan solos.
 create table if not exists service_status (
   service text primary key,
   is_down boolean not null default false,
   since timestamptz,
+  down_notified boolean not null default false,
   updated_at timestamptz not null default now()
 );
 insert into service_status (service) values ('intralu') on conflict do nothing;
@@ -67,7 +70,9 @@ alter table service_status enable row level security;
 --   service text primary key,
 --   is_down boolean not null default false,
 --   since timestamptz,
+--   down_notified boolean not null default false,
 --   updated_at timestamptz not null default now()
 -- );
 -- insert into service_status (service) values ('intralu') on conflict do nothing;
 -- alter table service_status enable row level security;
+-- alter table service_status add column if not exists down_notified boolean not null default false;
