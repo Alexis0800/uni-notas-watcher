@@ -248,6 +248,51 @@ secret, el paso lo detecta y no hace nada (avisa en el log, no falla
 el job) — se queda en el intervalo de ~1h del `schedule` nativo hasta
 que se agregue.
 
+### Qué pasa cuando GitHub Actions se cae (2026-08-06)
+
+La cadena depende de dos cosas de GitHub que pueden fallar a la vez: que
+haya runners disponibles y que la API de `dispatches` conteste. El
+2026-08-06, entre las 15:38 y (al menos) las 19:50 UTC, ninguna de las
+dos funcionó:
+
+- Una corrida consiguió runner pero murió en `Set up job` con
+  `Failed to resolve action download info. Error: Service Unavailable`
+  — el runner no pudo descargar `checkout`/`setup-node`, sin llegar
+  nunca a `Run check-all-users`.
+- Las siguientes ni siquiera recibieron runner (`runner_id: 0`) y
+  GitHub las canceló a los 15 minutos exactos de estar encoladas.
+
+No hay nada del lado del repo que evite eso, pero sí tres formas en que
+el diseño lo empeoraba, ya corregidas en
+[`check-grade.yml`](../.github/workflows/check-grade.yml):
+
+1. **Un solo intento de dispatch.** Si ese único POST caía en el 5xx de
+   turno, la cadena se rompía aunque la corrida hubiera hecho su
+   trabajo. Ahora se reintenta 4 veces con backoff (10s, 20s, 30s).
+2. **Sin `timeout-minutes`.** El default de GitHub son **6 horas**: un
+   job colgado se quedaba con el `concurrency group` y dejaba la cadena
+   muerta media jornada. Ahora son 15 min (el peor caso real son ~9.5:
+   `RUN_WINDOW_SECONDS` de trabajo + 300s de espera del ciclo).
+3. **El cron de respaldo duplicaba la cadena.** Si `*/5` disparaba
+   mientras la cadena seguía viva, esa corrida se encolaba, corría
+   igual y encadenaba **una segunda cadena en paralelo** — dos dispatch
+   por ciclo, para siempre. El paso `Descartar corrida duplicada del
+   cron` la descarta en segundos si la corrida anterior terminó bien
+   hace menos de 120s. Si terminó mal (falló, la cancelaron, o se quedó
+   sin runner), no se descarta: esa corrida es justo la que reinicia la
+   cadena. Ante cualquier error consultando la API se sigue adelante —
+   un chequeo de más es preferible a dejar de revisar notas.
+
+Lo que **no** hace falta arreglar: que se apilen corridas encoladas.
+GitHub permite como máximo 1 activa + 1 pendiente por `concurrency
+group` y cancela sola las demás, así que la cola no crece por más que
+el cron insista.
+
+Durante una caída así, la recuperación es automática pero lenta: el
+`schedule` de respaldo (que GitHub atrasa a ~1h) es lo único que puede
+reiniciar la cadena. Para no esperar, basta un `workflow_dispatch`
+manual apenas Actions vuelva.
+
 ### Por qué el chequeo al registrarse necesitó su propio workflow
 
 La primera versión de "chequeo casi-inmediato al registrarse" disparaba

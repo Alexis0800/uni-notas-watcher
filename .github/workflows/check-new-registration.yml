@@ -19,6 +19,11 @@ concurrency:
 jobs:
   check-new-registration:
     runs-on: ubuntu-latest
+    # El default de GitHub son 6 horas: un job colgado se quedaría con este
+    # concurrency group y los registros nuevos que lleguen después no se
+    # revisarían hasta que caduque. Revisar hasta MAX_NUEVOS (20) usuarios
+    # toma minutos, no horas.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
