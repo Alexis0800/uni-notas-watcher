@@ -10,6 +10,12 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch: {}
 
+# No dejar que dos corridas se pisen: si INTRALU se revisa dos veces en
+# paralelo se pueden mandar notificaciones duplicadas (checkUser() lee y
+# escribe el estado del usuario en Supabase). GitHub permite como máximo 1
+# corrida activa + 1 en cola por grupo; las demás las cancela sola, así que
+# la cola nunca crece. La que sí queda encolada la descarta el paso
+# "Descartar corrida duplicada del cron" de abajo.
 concurrency:
   group: check-grade
   cancel-in-progress: false
@@ -17,26 +23,91 @@ concurrency:
 jobs:
   check-grade:
     runs-on: ubuntu-latest
+    # El default de GitHub son 6 HORAS. Sin esto, un job colgado (INTRALU que
+    # no responde ni corta, un runner en mal estado) se queda con el
+    # concurrency group y deja la cadena muerta media jornada. Una corrida
+    # normal son ~40s de chequeo + hasta 300s de espera del ciclo; el peor
+    # caso es RUN_WINDOW_SECONDS (270s) + 300s ≈ 9.5 min.
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Para que el paso de abajo pueda consultar el estado de las corridas
+      # anteriores de este mismo workflow.
+      actions: read
     steps:
+      # Cuando el cron de respaldo dispara mientras la cadena de 5 min sigue
+      # viva, esta corrida es un duplicado: además del chequeo redundante
+      # dejaría una SEGUNDA cadena encadenándose en paralelo (dos dispatch
+      # por ciclo, para siempre). Se descarta sola en segundos.
+      #
+      # Solo aplica a `schedule`. Los workflow_dispatch —la cadena, el
+      # chequeo manual y el que dispara el registro— siempre corren.
+      #
+      # Si la corrida anterior NO terminó bien (falló, la cancelaron, o
+      # GitHub no le dio runner como en la caída del 2026-08-06), la cadena
+      # está rota y esta corrida es justo la que debe reiniciarla: en ese
+      # caso no se descarta. Ante cualquier error consultando el API se
+      # sigue adelante — es preferible un chequeo de más que dejar de
+      # revisar notas.
+      - name: Descartar corrida duplicada del cron
+        id: guard
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          respuesta=$(curl -s --max-time 30 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/actions/workflows/check-grade.yml/runs?status=completed&per_page=5") || respuesta=''
+
+          ultima=$(printf '%s' "$respuesta" | jq -r --argjson yo "$RUN_ID" '
+            [.workflow_runs[]? | select(.id != $yo)]
+            | sort_by(.updated_at) | last
+            | select(.conclusion == "success") | .updated_at // empty' 2>/dev/null) || ultima=''
+
+          if [ -z "$ultima" ]; then
+            echo "La corrida anterior no terminó bien (o no se pudo consultar) — la cadena está rota, esta corrida la reinicia."
+            exit 0
+          fi
+
+          hace=$(( $(date +%s) - $(date -d "$ultima" +%s) ))
+          # La cadena encadena la siguiente corrida apenas termina la
+          # anterior, así que en marcha normal el hueco entre corridas es de
+          # segundos. 120s es holgado incluso con el ciclo corto de 60s.
+          if [ "$hace" -lt 120 ]; then
+            echo "saltar=true" >> "$GITHUB_OUTPUT"
+            echo "⏭️ La cadena sigue viva (última corrida exitosa hace ${hace}s) — se descarta este duplicado del cron."
+          else
+            echo "Última corrida exitosa hace ${hace}s — la cadena se cortó, esta corrida la reinicia."
+          fi
+
       - name: Registrar hora de inicio
+        if: steps.guard.outputs.saltar != 'true'
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
+        if: steps.guard.outputs.saltar != 'true'
 
       - uses: pnpm/action-setup@v4
+        if: steps.guard.outputs.saltar != 'true'
         with:
           version: 11.13.0
 
       - uses: actions/setup-node@v4
+        if: steps.guard.outputs.saltar != 'true'
         with:
           node-version: 22
           cache: pnpm
 
       - name: Install dependencies
+        if: steps.guard.outputs.saltar != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Run check-all-users
         id: check
+        if: steps.guard.outputs.saltar != 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -57,8 +128,11 @@ jobs:
       # recuperación rápido sin necesitar un chequeo de salud aparte — ver
       # docs/superpowers/specs/2026-07-17-avisos-caida-intralu-design.md,
       # sección "Alternativas consideradas".
+      # `always()` para que la cadena siga viva aunque el chequeo falle, pero
+      # NO cuando la corrida se descartó por duplicada: ahí la cadena ya la
+      # lleva otra corrida y encadenar acá la duplicaría.
       - name: Encadenar la siguiente corrida
-        if: always()
+        if: always() && steps.guard.outputs.saltar != 'true'
         env:
           DISPATCH_TOKEN: ${{ secrets.WORKFLOW_DISPATCH_TOKEN }}
           INTRALU_DOWN: ${{ steps.check.outputs.intralu_down }}
@@ -81,15 +155,33 @@ jobs:
             sleep "$sleep_for"
           fi
 
-          http_code=$(curl -s -o /tmp/dispatch_response.json -w "%{http_code}" -X POST \
-            -H "Authorization: Bearer $DISPATCH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/check-grade.yml/dispatches" \
-            -d "{\"ref\":\"${{ github.ref_name }}\"}")
+          # Un solo POST no basta: durante una degradación de GitHub el API
+          # contesta 5xx (el 2026-08-06 devolvió 502/503 por horas) y ahí se
+          # rompe la cadena entera, dejándola a merced del cron de respaldo
+          # que GitHub atrasa a ~1h. Se reintenta con backoff antes de
+          # rendirse.
+          for intento in 1 2 3 4; do
+            http_code=$(curl -s -o /tmp/dispatch_response.json -w "%{http_code}" --max-time 30 -X POST \
+              -H "Authorization: Bearer $DISPATCH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/check-grade.yml/dispatches" \
+              -d "{\"ref\":\"${{ github.ref_name }}\"}") || http_code=000
 
-          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
-            echo "❌ Falló el dispatch (HTTP $http_code):"
-            cat /tmp/dispatch_response.json
-            exit 1
-          fi
-          echo "✅ Dispatch OK (HTTP $http_code)."
+            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+              echo "✅ Dispatch OK (HTTP $http_code)."
+              exit 0
+            fi
+
+            echo "⚠️ Intento $intento falló (HTTP $http_code):"
+            cat /tmp/dispatch_response.json 2>/dev/null || true
+            echo
+
+            if [ "$intento" -lt 4 ]; then
+              espera=$(( intento * 10 ))
+              echo "Reintentando en ${espera}s..."
+              sleep "$espera"
+            fi
+          done
+
+          echo "❌ No se pudo encadenar la siguiente corrida tras 4 intentos — el cron de respaldo la reiniciará."
+          exit 1
