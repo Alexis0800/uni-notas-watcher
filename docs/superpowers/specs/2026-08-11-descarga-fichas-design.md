@@ -7,7 +7,7 @@
 [`2026-08-11-avisos-anuncios.md`](../plans/2026-08-11-avisos-anuncios.md)
 (avisos de anuncios + `/avisos`, nacido del hallazgo lateral de más abajo).
 
-**Estado:** Listo para plan — la estructura real de
+**Estado:** Implementado (2026-08-11). La estructura real de
 `/informacion-academica/fichas` ya se verificó contra el sitio con
 `pnpm run test-fichas` (ver "Investigación (resuelta)"), así que esto ya
 puede pasarse a un plan de implementación tarea por tarea, como se hizo
@@ -59,26 +59,32 @@ contraseña nunca salió del disco, ver `docs/SECURITY.md`).
 con su título en `.card-title` y un `<a>` a un PDF. No hay POST, ni CSRF,
 ni JS: son links `GET` directos que solo necesitan la cookie de sesión.
 
-| Ficha | Ruta (bajo `/informacion-academica/`) | Resultado |
-| --- | --- | --- |
-| Ficha Datos Personales | `ficha-datos-pdf` | ✅ 189 KB |
-| Ficha Académica | `ficha-academica-pdf` | ✅ 88 KB |
-| Ficha Académica Depurada | `ficha-academica-depurada-pdf` | ✅ 82 KB |
-| Avance Curricular | `avance-curricular-pdf` | ✅ 85 KB |
-| Adeudos | `adeudo-academico-pdf` | ✅ 74 KB |
-| Constancia de Matrícula | `constancia-matricula-pdf` | ❌ 404 `{"message":""}` |
-| Constancia de Ingreso | `constancia-ingreso-pdf` | ❌ 500 `{"message":"Server Error"}` |
+| Ficha | Ruta (bajo `/informacion-academica/`) | Mañana | Tarde |
+| --- | --- | --- | --- |
+| Ficha Datos Personales | `ficha-datos-pdf` | ✅ 189 KB | ✅ |
+| Ficha Académica | `ficha-academica-pdf` | ✅ 88 KB | ✅ |
+| Ficha Académica Depurada | `ficha-academica-depurada-pdf` | ✅ 82 KB | ✅ |
+| Avance Curricular | `avance-curricular-pdf` | ✅ 85 KB | ✅ |
+| Adeudos | `adeudo-academico-pdf` | ✅ 74 KB | ✅ |
+| Constancia de Matrícula | `constancia-matricula-pdf` | ❌ 404 `{"message":""}` | ✅ 177 KB |
+| Constancia de Ingreso | `constancia-ingreso-pdf` | ❌ 500 `{"message":"Server Error"}` | ya no se lista |
+
+**Ni la lista ni el estado de cada ficha son estables.** Las dos columnas de
+arriba son el mismo día con unas horas de diferencia: la página pasó de
+ofrecer 7 tarjetas a ofrecer 6 (Constancia de Ingreso desapareció) y
+Constancia de Matrícula pasó de devolver 404 a entregar el PDF sin
+problema. Cualquier diseño que asuma una lista fija de siete, o un conjunto
+fijo de "rotas", se rompe solo.
 
 Respuestas a lo que estaba abierto:
 
-1. **Qué hay**: 7 documentos, lista fija de tarjetas. **Pero 2 de los 7
-   no funcionan** — devuelven JSON de error con `Content-Type:
-   application/json`, no PDF. Según lo que se sabe hasta ahora están rotas
-   del lado de INTRALU para todos los alumnos, no es algo de una cuenta
-   puntual (se verificó directamente en una sola cuenta, el resto es
-   reporte de terceros). Como sea, **el bot tiene que tolerarlo**: no
-   asumir que un 200 implica PDF (ver "Cómo detectar una ficha rota"), y
-   decirle al usuario que la falla es de INTRALU y no de su cuenta.
+1. **Qué hay**: hasta 7 documentos, en tarjetas. **La lista cambia sola** y
+   algunas fichas fallan de forma intermitente, devolviendo JSON de error
+   con `Content-Type: application/json` en vez del PDF (ver la tabla). Como
+   sea, **el bot tiene que tolerarlo**: no asumir que un 200 implica PDF
+   (ver "Cómo detectar una ficha rota"), no asumir que la ficha que el
+   usuario pidió sigue existiendo, y decirle que la falla es de INTRALU y
+   no de su cuenta.
 2. **Cómo se obtiene**: `GET` directo, sin token. Nada que replicar más
    allá de reusar el cliente de `login()`.
 3. **Formato y tamaño**: `application/pdf`, 74–189 KB. Muy por debajo de
@@ -250,15 +256,15 @@ No hay página índice: `/anuncio`, `/anuncios` y `/anuncio/listar` dan
 404. La lista vive **solo en el HTML del home**, así que hay que
 scrapearla de ahí.
 
-**Esto da para un spec propio, no para meterlo acá**, porque el valor
-está en un modo distinto: a diferencia de las fichas (bajo demanda, no
-cambian), un anuncio nuevo es exactamente el tipo de cosa que el bot ya
-sabe hacer sola — `check-all-users.js` ya loguea a cada usuario cada 5
-min y ya tiene el patrón "comparar contra lo último visto y avisar solo
-si hay algo nuevo". Un `/anuncios` bajo demanda sería la mitad del
-feature; la otra mitad, avisar sin que te pidan nada, es la que vale.
+**Implementado como feature aparte**, ver
+[`2026-08-11-avisos-anuncios.md`](../plans/2026-08-11-avisos-anuncios.md):
+revisión por usuario cada hora, aviso con el adjunto incluido, y opt-out
+con `/avisos`. El valor está en un modo distinto al de las fichas: un
+anuncio nuevo es exactamente el tipo de cosa que el bot ya sabe hacer
+solo (comparar contra lo último visto y avisar solo si hay algo nuevo),
+mientras que las fichas son bajo demanda.
 
-Dos cosas a confirmar antes de escribir ese spec: si la lista de
-anuncios es global (misma para todos) o por facultad/alumno, y cuántos
-anuncios muestra el home como máximo — con una sola cuenta no se puede
-saber.
+Quedó sin confirmar si la lista de anuncios es global (misma para todos)
+o por facultad/alumno — con una sola cuenta no se puede saber. Por eso se
+revisa por usuario, que es correcto en los dos casos aunque cueste un
+login por usuario por hora.

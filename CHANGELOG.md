@@ -5,6 +5,34 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/),
 y este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 
+## [1.4.0] - 2026-08-11
+
+### Added
+
+- **`/fichas`**: lista las fichas y constancias de
+  `/informacion-academica/fichas` como botones y descarga la que se elija,
+  mandándola al chat como PDF adjunto. Cada botón dispara
+  `descargar-fichas.yml`, que corre `fetch-fichas.js` para esa ficha puntual.
+  Nada se persiste: los bytes viven en el runner y se van con el job. Se
+  listan todas, incluidas las que a veces fallan — el estado real de cada una
+  se descubre al tocarla, y si la ficha ya no está en la página el bot
+  responde con las que sí hay (la lista cambia: el mismo día se vio la página
+  con 7 tarjetas y con 6).
+- **Avisos de anuncios de INTRALU**: `check-anuncios.yml` revisa cada hora la
+  home de cada usuario suscrito y le manda los anuncios, reglamentos,
+  resoluciones y manuales nuevos, con su archivo adjunto incluido
+  (`GET /anuncio/download/{codanu}`). Se revisa por usuario y no con una
+  cuenta única porque no se pudo confirmar si la lista es global o por
+  facultad. La primera corrida de cada usuario solo guarda el estado, sin
+  avisar, para no mandar de golpe todo lo viejo.
+- **`/avisos`**: activa o desactiva esos avisos sin darse de baja del bot —
+  las notificaciones de notas nuevas siguen llegando igual. Nuevas columnas
+  `anuncios_vistos`, `anuncios_seeded` y `avisos_activos` en `usuarios`
+  (migración manual, ver `supabase/schema.sql`).
+- Primeros tests automatizados del proyecto, con `node --test` (stdlib, sin
+  dependencias nuevas): `pnpm test`. Cubren los parsers de fichas y anuncios,
+  el diff de publicaciones vistas y el armado de mensajes.
+
 ## [1.3.0] - 2026-08-11
 
 ### Added

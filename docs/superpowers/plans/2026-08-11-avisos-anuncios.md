@@ -1,5 +1,22 @@
 # Avisos de anuncios de INTRALU (`/avisos`) — Implementation Plan
 
+**Estado: implementado** el 2026-08-11 en la rama
+`claude/bot-file-downloads-notifications-rdoqdf`, salvo la migración SQL, que
+es manual (Task 1, Step 3 — pendiente de correrla en el SQL Editor de
+Supabase). Hasta que se corra, `check-anuncios.js` falla porque la columna
+`avisos_activos` todavía no existe.
+
+Divergencias menores respecto de lo escrito abajo:
+
+- Los tests quedaron todos en un solo `test/anuncios.test.js` (17 tests) en
+  vez de irse agregando por tarea.
+- En `revisarUsuario` el diff (`nuevas(...)`) se calcula después del chequeo
+  de `anuncios_seeded`, no antes — mismo comportamiento, un paso menos en la
+  primera corrida.
+- El script de `package.json` para tests es `node --test "test/*.test.js"`
+  (con glob): sin él, el runner levanta los scripts de diagnóstico del root y
+  se loguea de verdad contra INTRALU en cada `pnpm test`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Que el bot avise por Telegram, con el archivo adjunto incluido, cuando INTRALU publica un anuncio, reglamento, resolución o manual nuevo — y que cualquiera pueda apagar esos avisos con `/avisos` sin darse de baja del bot.

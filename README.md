@@ -27,6 +27,8 @@ que faltan.
 - `/registrar` — abre el formulario de registro (o `/registrar CODIGO CONTRASEÑA` por texto)
 - `/notas` — todas tus notas registradas, agrupadas por curso, con 🟢/🔴 y el promedio de cada curso
 - `/ciclos` — consulta tus notas de un ciclo anterior (bajo demanda, un período a la vez)
+- `/fichas` — lista tus fichas y constancias de INTRALU y descarga la que elijas como PDF
+- `/avisos` — activa o desactiva los avisos de anuncios nuevos de INTRALU
 - `/simular` — elige un curso y simula tu nota final con lo que falta
 - `/estado` — si estás activo y cuándo se revisó por última vez
 - `/baja` — borra tu registro y tu contraseña
