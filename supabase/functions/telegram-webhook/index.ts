@@ -76,12 +76,20 @@ async function deleteMessage(chatId: number, messageId: number) {
 // el secret, GitHub no responde), el registro ya se guardó bien igual, y
 // la cadena normal de check-grade.yml lo recoge de todas formas más tarde
 // (ver docs/SCALING.md).
-async function dispararChequeoInmediato() {
+// Dispara un workflow de GitHub Actions. Devuelve null si salió bien, o un
+// motivo corto si falló, para que quien lo llame decida si avisarle al
+// usuario o seguir de largo.
+//
+// Antes cada dispatcher se tragaba el error en silencio: si el token estaba
+// vencido o faltaba, el usuario veía "🔎 Buscando..." y no llegaba nada
+// nunca, sin ninguna pista de por qué. Los comandos que hacen esperar al
+// usuario (/ciclos, /fichas) ahora sí le avisan.
+async function dispararWorkflow(workflow: string, inputs: Record<string, string> = {}): Promise<string | null> {
   const token = Deno.env.get('GITHUB_DISPATCH_TOKEN');
-  if (!token) return;
+  if (!token) return 'falta GITHUB_DISPATCH_TOKEN';
   try {
     const res = await fetch(
-      'https://api.github.com/repos/Alexis0800/uni-notas-watcher/actions/workflows/check-new-registration.yml/dispatches',
+      `https://api.github.com/repos/Alexis0800/uni-notas-watcher/actions/workflows/${workflow}/dispatches`,
       {
         method: 'POST',
         headers: {
@@ -89,13 +97,24 @@ async function dispararChequeoInmediato() {
           Accept: 'application/vnd.github+json',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ ref: 'main' }),
+        body: JSON.stringify({ ref: 'main', inputs }),
       },
     );
-    if (!res.ok) console.error('dispararChequeoInmediato:', res.status, await res.text());
-  } catch {
-    // best-effort, no pasa nada si falla
+    if (res.ok) return null;
+    const cuerpo = await res.text();
+    console.error('dispararWorkflow:', workflow, res.status, cuerpo);
+    return `GitHub respondió ${res.status}`;
+  } catch (err) {
+    console.error('dispararWorkflow:', workflow, err);
+    return 'no pude contactar a GitHub';
   }
+}
+
+// Dispara check-new-registration.yml — best-effort de verdad: si falla, el
+// registro ya se guardó bien igual y la cadena de check-grade.yml lo recoge
+// más tarde, así que no hay nada que avisarle al usuario.
+async function dispararChequeoInmediato() {
+  await dispararWorkflow('check-new-registration.yml');
 }
 
 // AAAA + dígito de ciclo: 1 primer ciclo, 2 segundo ciclo, 3 verano
@@ -132,50 +151,20 @@ async function answerCallbackQuery(callbackQueryId: string, text?: string) {
 // Dispara fetch-historial.yml (workflow aparte, revisa un solo período de
 // un solo usuario) para consultar un ciclo pasado que todavía no está en
 // `historial` — best-effort, mismo patrón que dispararChequeoInmediato.
-async function dispararFetchHistorial(chatId: number, codper: string) {
-  const token = Deno.env.get('GITHUB_DISPATCH_TOKEN');
-  if (!token) return;
-  try {
-    const res = await fetch(
-      'https://api.github.com/repos/Alexis0800/uni-notas-watcher/actions/workflows/fetch-historial.yml/dispatches',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.github+json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ref: 'main', inputs: { chat_id: String(chatId), codper } }),
-      },
-    );
-    if (!res.ok) console.error('dispararFetchHistorial:', res.status, await res.text());
-  } catch {
-    // best-effort, no pasa nada si falla
-  }
+function dispararFetchHistorial(chatId: number, codper: string) {
+  return dispararWorkflow('fetch-historial.yml', { chat_id: String(chatId), codper });
+}
+
+// Mensaje para cuando el dispatch falla en un comando que dejó al usuario
+// esperando. Sin esto se quedaba mirando un "🔎 Buscando..." eterno.
+function avisoDispatchFallido(motivo: string) {
+  return `❌ No pude arrancar la consulta (${motivo}).\n\nEsto es un problema del bot, no de tu cuenta ni de INTRALU. Avisale al admin e intenta de nuevo más tarde.`;
 }
 
 // Dispara descargar-fichas.yml (workflow aparte, baja una sola ficha) —
 // best-effort, mismo patrón que dispararFetchHistorial.
-async function dispararDescargaFicha(chatId: number, fichaId: string) {
-  const token = Deno.env.get('GITHUB_DISPATCH_TOKEN');
-  if (!token) return;
-  try {
-    const res = await fetch(
-      'https://api.github.com/repos/Alexis0800/uni-notas-watcher/actions/workflows/descargar-fichas.yml/dispatches',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.github+json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ref: 'main', inputs: { chat_id: String(chatId), ficha_id: fichaId } }),
-      },
-    );
-    if (!res.ok) console.error('dispararDescargaFicha:', res.status, await res.text());
-  } catch {
-    // best-effort, no pasa nada si falla
-  }
+function dispararDescargaFicha(chatId: number, fichaId: string) {
+  return dispararWorkflow('descargar-fichas.yml', { chat_id: String(chatId), ficha_id: fichaId });
 }
 
 // Catálogo de fichas de /informacion-academica/fichas. El `id` es el último
@@ -247,7 +236,8 @@ async function manejarCallbackQuery(callbackQuery: any) {
       chatIdFicha,
       `🔎 Buscando <b>${ficha.label}</b> en INTRALU, puede tardar un minuto...`,
     );
-    await dispararDescargaFicha(chatIdFicha, ficha.id);
+    const fallo = await dispararDescargaFicha(chatIdFicha, ficha.id);
+    if (fallo) await sendMessage(chatIdFicha, avisoDispatchFallido(fallo));
     return;
   }
 
@@ -280,7 +270,8 @@ async function manejarCallbackQuery(callbackQuery: any) {
     );
   } else {
     if (messageId) await editMessageText(chatId, messageId, `🔎 Buscando tus notas del ciclo ${etiqueta}, puede tardar unos minutos...`);
-    await dispararFetchHistorial(chatId, codper);
+    const fallo = await dispararFetchHistorial(chatId, codper);
+    if (fallo) await sendMessage(chatId, avisoDispatchFallido(fallo));
   }
 }
 
