@@ -57,6 +57,19 @@ insert into service_status (service) values ('intralu') on conflict do nothing;
 
 alter table service_status enable row level security;
 
+-- Quiénes preguntaron (/notas o /estado) mientras el servicio estaba caído
+-- (down_notified=true, ver lib/service-status.js) — así solo se les avisa a
+-- ellos cuando se recupera, en vez de a todos los usuarios activos. Se
+-- vacía por completo en cada recuperación (markIntraluUp en
+-- lib/service-status.js).
+create table if not exists service_status_interesados (
+  service text not null references service_status(service),
+  chat_id bigint not null,
+  created_at timestamptz not null default now(),
+  primary key (service, chat_id)
+);
+alter table service_status_interesados enable row level security;
+
 -- Migración para una base ya desplegada (el create table de arriba solo
 -- aplica a instalaciones nuevas) — pega y corre esto una vez en el SQL
 -- Editor de tu proyecto de Supabase si tu tabla `usuarios` ya existía antes
@@ -76,3 +89,11 @@ alter table service_status enable row level security;
 -- insert into service_status (service) values ('intralu') on conflict do nothing;
 -- alter table service_status enable row level security;
 -- alter table service_status add column if not exists down_notified boolean not null default false;
+--
+-- create table if not exists service_status_interesados (
+--   service text not null references service_status(service),
+--   chat_id bigint not null,
+--   created_at timestamptz not null default now(),
+--   primary key (service, chat_id)
+-- );
+-- alter table service_status_interesados enable row level security;

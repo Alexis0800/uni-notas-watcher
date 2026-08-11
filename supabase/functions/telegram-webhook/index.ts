@@ -307,6 +307,35 @@ function botonSimular(codcur: string) {
   return { inline_keyboard: [[{ text: '📐 Abrir simulador', web_app: { url: `${SIMULADOR_URL}?curso=${codcur}` } }]] };
 }
 
+function formatearDuracionDesde(iso: string): string {
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 60) return `~${Math.max(mins, 1)} min`;
+  return `~${Math.round(mins / 60)} h`;
+}
+
+// Si INTRALU lleva caído más del umbral mínimo de aviso (mismo que usa
+// lib/service-status.js para avisarle al admin, 10 min — down_notified
+// pasa a true recién ahí), arma una línea para agregar a la respuesta de
+// quien preguntó y lo anota en service_status_interesados para que
+// markIntraluUp() (check-all-users.js, corrida periódica) le avise por acá
+// apenas se recupere — sin mandarle nada a quien no preguntó nada durante
+// la caída (ver docs/superpowers/specs/2026-07-17-avisos-caida-intralu-design.md).
+async function avisoIntraluCaido(chatId: number): Promise<string> {
+  const { data } = await supabase
+    .from('service_status')
+    .select('is_down, since, down_notified')
+    .eq('service', 'intralu')
+    .maybeSingle();
+
+  if (!data?.is_down || !data.down_notified || !data.since) return '';
+
+  await supabase
+    .from('service_status_interesados')
+    .upsert({ service: 'intralu', chat_id: chatId }, { onConflict: 'service,chat_id' });
+
+  return `\n\n⚠️ INTRALU lleva caído ${formatearDuracionDesde(data.since)} (no responde). Te aviso por acá en cuanto vuelva.`;
+}
+
 Deno.serve(async (req) => {
   const secretHeader = req.headers.get('x-telegram-bot-api-secret-token');
   if (secretHeader !== WEBHOOK_SECRET) {
@@ -379,6 +408,7 @@ Deno.serve(async (req) => {
       await sendMessage(chatId, 'No estás registrado.', botonRegistrar());
     } else {
       const evaluaciones = Object.keys(data.last_grades ?? {}).length;
+      const aviso = await avisoIntraluCaido(chatId);
       await sendMessage(
         chatId,
         [
@@ -388,7 +418,7 @@ Deno.serve(async (req) => {
           `Activo: ${data.active ? '🟢 sí' : '🔴 no (tu contraseña parece estar mal)'}`,
           `Evaluaciones registradas: <b>${evaluaciones}</b>`,
           `Última actualización: ${formatearFecha(data.updated_at)}`,
-        ].join('\n'),
+        ].join('\n') + aviso,
         data.active ? undefined : botonRegistrar(),
       );
     }
@@ -404,13 +434,14 @@ Deno.serve(async (req) => {
       // no de un chequeo real, y mostrarla sería engañoso (ej. durante una
       // caída larga de INTRALU antes del primer chequeo exitoso).
       const actualizado = data.seeded ? `\n\nÚltima actualización: ${formatearFecha(data.updated_at)}` : '';
+      const aviso = await avisoIntraluCaido(chatId);
       if (!bloque) {
         const mensaje = data.seeded
           ? `Todavía no tienes notas registradas.${actualizado}`
           : 'Todavía no pude revisar tus notas por primera vez — te aviso apenas termine.';
-        await sendMessage(chatId, mensaje);
+        await sendMessage(chatId, mensaje + aviso);
       } else {
-        await sendMessage(chatId, `📋 Tus notas (ciclo actual):\n\n${bloque}${actualizado}`);
+        await sendMessage(chatId, `📋 Tus notas (ciclo actual):\n\n${bloque}${actualizado}${aviso}`);
       }
     }
   } else if (text === '/ciclos') {

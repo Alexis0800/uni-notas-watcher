@@ -5,6 +5,20 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/),
 y este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 
+## [1.3.0] - 2026-08-11
+
+### Added
+
+- **Aviso de caída de INTRALU al consultar `/notas` o `/estado`**: si el
+  servicio lleva caído más del umbral mínimo (10 min, mismo que ya usa el
+  aviso al admin), la respuesta agrega cuánto tiempo lleva caído y avisa
+  que se notificará apenas vuelva — solo a quien preguntó, no a todos los
+  usuarios activos. Quien pregunta queda anotado en la nueva tabla
+  `service_status_interesados` (migración manual, ver `supabase/schema.sql`)
+  y recibe un mensaje aparte cuando el servicio se recupera
+  (`markIntraluUp` en `lib/service-status.js`), sin repetir el aviso a
+  quien nunca preguntó nada durante la caída.
+
 ## [1.2.0] - 2026-07-16
 
 ### Added
