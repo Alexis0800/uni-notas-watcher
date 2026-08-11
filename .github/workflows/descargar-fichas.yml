@@ -1,0 +1,53 @@
+name: Descargar ficha
+
+# Disparado solo por telegram-webhook cuando alguien toca el botón de una
+# ficha en /fichas. Corre una sola vez (sin sleep, sin auto-encadenarse) y
+# baja una sola ficha de un solo chat_id — nunca un lote. El concurrency
+# group está scopeado al par (chat_id, ficha_id), no a todo el workflow (a
+# diferencia de check-grade.yml): dos usuarios distintos, o el mismo usuario
+# pidiendo dos fichas distintas, corren en paralelo sin problema; solo se
+# evita que el mismo usuario dispare dos veces la misma descarga encimada.
+
+on:
+  workflow_dispatch:
+    inputs:
+      chat_id:
+        description: 'Telegram chat_id del usuario'
+        required: true
+        type: string
+      ficha_id:
+        description: 'Último segmento de la URL de la ficha (ej. ficha-academica-pdf)'
+        required: true
+        type: string
+
+concurrency:
+  group: descargar-fichas-${{ github.event.inputs.chat_id }}-${{ github.event.inputs.ficha_id }}
+  cancel-in-progress: true
+
+jobs:
+  descargar-fichas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.13.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run fetch-fichas
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CREDENTIALS_ENCRYPTION_KEY: ${{ secrets.CREDENTIALS_ENCRYPTION_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ github.event.inputs.chat_id }}
+          FICHA_ID: ${{ github.event.inputs.ficha_id }}
+        run: pnpm run fetch-fichas

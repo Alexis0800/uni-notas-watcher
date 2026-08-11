@@ -154,9 +154,73 @@ async function dispararFetchHistorial(chatId: number, codper: string) {
   }
 }
 
+// Dispara descargar-fichas.yml (workflow aparte, baja una sola ficha) —
+// best-effort, mismo patrón que dispararFetchHistorial.
+async function dispararDescargaFicha(chatId: number, fichaId: string) {
+  const token = Deno.env.get('GITHUB_DISPATCH_TOKEN');
+  if (!token) return;
+  try {
+    const res = await fetch(
+      'https://api.github.com/repos/Alexis0800/uni-notas-watcher/actions/workflows/descargar-fichas.yml/dispatches',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ref: 'main', inputs: { chat_id: String(chatId), ficha_id: fichaId } }),
+      },
+    );
+    if (!res.ok) console.error('dispararDescargaFicha:', res.status, await res.text());
+  } catch {
+    // best-effort, no pasa nada si falla
+  }
+}
+
+// Catálogo de fichas de /informacion-academica/fichas. El `id` es el último
+// segmento de la URL del PDF, que es lo que viaja en el callback_data y lo
+// que fetch-fichas.js usa para encontrarla en la página real.
+//
+// Está hardcodeado a propósito, aunque la lista real varíe: mostrar los
+// botones al instante vale más que un scraping previo (que costaría un
+// workflow + login, ~1 min, solo para ver la lista). Se listan TODAS,
+// incluidas las que a veces fallan — el estado real de cada una se descubre
+// al tocarla, y fetch-fichas.js responde con las disponibles si la que se
+// pidió ya no está. Verificado el 2026-08-11: la página pasó de ofrecer 7 a
+// ofrecer 6 en unas horas, y una que fallaba con 404 a la mañana descargaba
+// bien a la tarde.
+const FICHAS = [
+  { id: 'ficha-datos-pdf', label: 'Ficha Datos Personales' },
+  { id: 'ficha-academica-pdf', label: 'Ficha Académica' },
+  { id: 'ficha-academica-depurada-pdf', label: 'Ficha Académica Depurada' },
+  { id: 'avance-curricular-pdf', label: 'Avance Curricular' },
+  { id: 'adeudo-academico-pdf', label: 'Adeudos' },
+  { id: 'constancia-matricula-pdf', label: 'Constancia de Matrícula' },
+  { id: 'constancia-ingreso-pdf', label: 'Constancia de Ingreso' },
+];
+
 // deno-lint-ignore no-explicit-any
 async function manejarCallbackQuery(callbackQuery: any) {
   const data = callbackQuery.data as string | undefined;
+
+  if (data?.startsWith('ficha:')) {
+    const fichaId = data.slice('ficha:'.length);
+    const chatIdFicha = callbackQuery.from.id;
+    const ficha = FICHAS.find((f) => f.id === fichaId);
+    await answerCallbackQuery(callbackQuery.id);
+    if (!ficha) return;
+
+    // No se edita el mensaje de los botones: así la lista queda usable para
+    // pedir otra ficha sin tener que escribir /fichas de nuevo.
+    await sendMessage(
+      chatIdFicha,
+      `🔎 Buscando <b>${ficha.label}</b> en INTRALU, puede tardar un minuto...`,
+    );
+    await dispararDescargaFicha(chatIdFicha, ficha.id);
+    return;
+  }
+
   if (!data || !data.startsWith('ciclo:')) {
     await answerCallbackQuery(callbackQuery.id);
     return;
@@ -202,6 +266,7 @@ Comandos:
 <b>/registrar</b> — registra o actualiza tu usuario de INTRALU (abre un formulario)
 <b>/notas</b> — muestra todas tus notas registradas hasta ahora
 <b>/ciclos</b> — consulta tus notas de un ciclo anterior
+<b>/fichas</b> — descarga tus fichas y constancias de INTRALU como PDF
 <b>/simular</b> — simula tu nota final de un curso con las evaluaciones que aún faltan
 <b>/estado</b> — ve si estás activo y cuándo se revisó por última vez
 <b>/baja</b> — borra tu registro y tu contraseña
@@ -461,6 +526,15 @@ Deno.serve(async (req) => {
         for (let i = 0; i < botones.length; i += 4) filas.push(botones.slice(i, i + 4));
         await sendMessage(chatId, '📚 Elige un ciclo para ver tus notas de ese período:', { inline_keyboard: filas });
       }
+    }
+  } else if (text === '/fichas') {
+    const { data } = await supabase.from('usuarios').select('chat_id').eq('chat_id', chatId).maybeSingle();
+    if (!data) {
+      await sendMessage(chatId, 'No estás registrado.', botonRegistrar());
+    } else {
+      await sendMessage(chatId, '📄 Elige la ficha que quieres descargar:', {
+        inline_keyboard: FICHAS.map((f) => [{ text: f.label, callback_data: `ficha:${f.id}` }]),
+      });
     }
   } else if (text.startsWith('/simular')) {
     const partes = text.split(/\s+/).filter(Boolean);
