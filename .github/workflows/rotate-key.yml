@@ -1,0 +1,39 @@
+name: Rotar llave de cifrado
+
+# Corrida manual y puntual: re-cifra las contraseñas guardadas de la llave vieja
+# (secrets.CREDENTIALS_ENCRYPTION_KEY, que ya nadie conoce en claro) a una nueva
+# (secrets.NEW_ENCRYPTION_KEY). Este es el único lugar donde la vieja sigue
+# existiendo. Ninguna de las dos se imprime en los logs — importa porque este
+# repo es público. Ver docs/DEPLOYMENT.md.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: rotate-key
+  cancel-in-progress: false
+
+jobs:
+  rotar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.13.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Re-cifrar contraseñas
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CREDENTIALS_ENCRYPTION_KEY: ${{ secrets.CREDENTIALS_ENCRYPTION_KEY }}
+          NEW_ENCRYPTION_KEY: ${{ secrets.NEW_ENCRYPTION_KEY }}
+        run: node rotate-encryption-key.js
