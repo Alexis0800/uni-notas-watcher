@@ -72,3 +72,24 @@ test('descargarFicha devuelve null si el status es 200 pero no es un PDF', async
   const html = Buffer.from('<!DOCTYPE html><html>login</html>');
   assert.strictEqual(await descargarFicha(clienteFalso({ status: 200, data: html }), '/x-pdf'), null);
 });
+
+const { nombreArchivo } = require('../fetch-fichas');
+
+test('nombreArchivo convierte el título en un nombre de archivo seguro', () => {
+  assert.strictEqual(nombreArchivo('Ficha Académica'), 'ficha-academica.pdf');
+  assert.strictEqual(nombreArchivo('Ficha Académica Depurada'), 'ficha-academica-depurada.pdf');
+  assert.strictEqual(nombreArchivo('Constancia de Matrícula'), 'constancia-de-matricula.pdf');
+  assert.strictEqual(nombreArchivo('Adeudos'), 'adeudos.pdf');
+});
+
+// El id que viaja en el callback_data del botón es el último segmento de la
+// URL, y así es como fetch-fichas.js encuentra la ficha en la página real.
+test('el id de la ficha es el último segmento de su URL', () => {
+  const fichas = parsearFichas(HTML_FICHAS);
+  const buscada = fichas.find((f) => f.url.endsWith('/ficha-academica-pdf'));
+  assert.strictEqual(buscada.nombre, 'Ficha Académica');
+  assert.strictEqual(
+    fichas.find((f) => f.url.endsWith('/ficha-inexistente-pdf')),
+    undefined,
+  );
+});
