@@ -20,6 +20,20 @@ create table if not exists usuarios (
   -- codper: mismo formato que `cursos`. Nunca lo toca el chequeo de 5 min
   -- (eso solo escribe `cursos`) — solo fetch-historial.js, bajo demanda.
   historial jsonb not null default '{}'::jsonb,
+  -- Claves de las publicaciones de la home de INTRALU (anuncios,
+  -- reglamentos, resoluciones, manuales) que este usuario ya recibió por
+  -- Telegram, para no avisarle dos veces lo mismo. Formato de cada clave:
+  -- "tipo|fecha|titulo" (ver clavePublicacion en check-anuncios.js). Se
+  -- recorta a las últimas 100 para que no crezca sin fin.
+  anuncios_vistos jsonb not null default '[]'::jsonb,
+  -- false hasta la primera corrida de check-anuncios.js: esa primera vez
+  -- solo guarda lo que ya está publicado, sin avisar nada — si no, alguien
+  -- que se registra hoy recibiría de golpe todos los anuncios viejos.
+  anuncios_seeded boolean not null default false,
+  -- Switch de /avisos. Activado por defecto. Apagarlo NO da de baja al
+  -- usuario: las notificaciones de notas nuevas siguen llegando (para
+  -- darse de baja del todo está /baja).
+  avisos_activos boolean not null default true,
   -- false hasta el primer chequeo tras registrarse: ese primer chequeo solo
   -- guarda el estado base sin notificar, para no avisar "nota nueva" de
   -- notas que la persona ya tenía antes de registrarse.
@@ -78,6 +92,9 @@ alter table service_status_interesados enable row level security;
 -- alter table usuarios add column if not exists periodos_disponibles jsonb not null default '[]'::jsonb;
 -- alter table usuarios add column if not exists historial jsonb not null default '{}'::jsonb;
 -- alter table usuarios add column if not exists network_issue_notified boolean not null default false;
+-- alter table usuarios add column if not exists anuncios_vistos jsonb not null default '[]'::jsonb;
+-- alter table usuarios add column if not exists anuncios_seeded boolean not null default false;
+-- alter table usuarios add column if not exists avisos_activos boolean not null default true;
 --
 -- create table if not exists service_status (
 --   service text primary key,

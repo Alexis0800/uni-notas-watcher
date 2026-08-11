@@ -204,6 +204,36 @@ const FICHAS = [
 async function manejarCallbackQuery(callbackQuery: any) {
   const data = callbackQuery.data as string | undefined;
 
+  if (data?.startsWith('avisos:')) {
+    const activar = data.slice('avisos:'.length) === 'on';
+    const chatIdAvisos = callbackQuery.from.id;
+    const messageIdAvisos = callbackQuery.message?.message_id as number | undefined;
+    await answerCallbackQuery(callbackQuery.id);
+    await supabase.from('usuarios').update({ avisos_activos: activar }).eq('chat_id', chatIdAvisos);
+
+    const { texto, markup } = mensajeAvisos(activar);
+    if (messageIdAvisos) {
+      // Se edita el mensaje original en vez de mandar uno nuevo, así el chat
+      // no se llena de estados viejos cada vez que se toca el botón. No se
+      // usa editMessageText() porque esa borra los botones a propósito
+      // (la usa /ciclos) y acá el botón tiene que quedar para poder volver.
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatIdAvisos,
+          message_id: messageIdAvisos,
+          text: texto,
+          parse_mode: 'HTML',
+          reply_markup: markup,
+        }),
+      });
+    } else {
+      await sendMessage(chatIdAvisos, texto, markup);
+    }
+    return;
+  }
+
   if (data?.startsWith('ficha:')) {
     const fichaId = data.slice('ficha:'.length);
     const chatIdFicha = callbackQuery.from.id;
@@ -254,6 +284,27 @@ async function manejarCallbackQuery(callbackQuery: any) {
   }
 }
 
+// Estado de la suscripción a avisos, con el botón que lo invierte. Un solo
+// switch para todo (anuncios, reglamentos, resoluciones, manuales): INTRALU
+// publica poco y separar por tipo serían cuatro columnas y cuatro botones
+// para nada. Apagarlo NO da de baja al usuario — las notas siguen llegando.
+function mensajeAvisos(activos: boolean) {
+  return {
+    texto: activos
+      ? '📢 Avisos de INTRALU: <b>ACTIVADOS</b>\n\nTe aviso cuando publiquen un anuncio, reglamento o resolución nuevo, con el archivo adjunto.\n\nEsto no afecta a tus notas: esas te siguen llegando igual.'
+      : '🔕 Avisos de INTRALU: <b>DESACTIVADOS</b>\n\nNo te voy a avisar de anuncios nuevos.\n\nTus notas te siguen llegando igual.',
+    markup: {
+      inline_keyboard: [
+        [
+          activos
+            ? { text: '🔕 Desactivar avisos', callback_data: 'avisos:off' }
+            : { text: '🔔 Activar avisos', callback_data: 'avisos:on' },
+        ],
+      ],
+    },
+  };
+}
+
 function botonRegistrar() {
   return {
     inline_keyboard: [[{ text: '📝 Registrarme', web_app: { url: REGISTRO_WEBAPP_URL } }]],
@@ -267,6 +318,7 @@ Comandos:
 <b>/notas</b> — muestra todas tus notas registradas hasta ahora
 <b>/ciclos</b> — consulta tus notas de un ciclo anterior
 <b>/fichas</b> — descarga tus fichas y constancias de INTRALU como PDF
+<b>/avisos</b> — activa o desactiva los avisos de anuncios de INTRALU
 <b>/simular</b> — simula tu nota final de un curso con las evaluaciones que aún faltan
 <b>/estado</b> — ve si estás activo y cuándo se revisó por última vez
 <b>/baja</b> — borra tu registro y tu contraseña
@@ -535,6 +587,14 @@ Deno.serve(async (req) => {
       await sendMessage(chatId, '📄 Elige la ficha que quieres descargar:', {
         inline_keyboard: FICHAS.map((f) => [{ text: f.label, callback_data: `ficha:${f.id}` }]),
       });
+    }
+  } else if (text === '/avisos') {
+    const { data } = await supabase.from('usuarios').select('avisos_activos').eq('chat_id', chatId).maybeSingle();
+    if (!data) {
+      await sendMessage(chatId, 'No estás registrado.', botonRegistrar());
+    } else {
+      const { texto, markup } = mensajeAvisos(data.avisos_activos !== false);
+      await sendMessage(chatId, texto, markup);
     }
   } else if (text.startsWith('/simular')) {
     const partes = text.split(/\s+/).filter(Boolean);

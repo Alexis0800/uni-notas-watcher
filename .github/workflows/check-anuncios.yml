@@ -1,0 +1,46 @@
+name: Check anuncios
+
+# Revisa una vez por hora la home de INTRALU de cada usuario suscrito y le
+# manda las publicaciones (anuncios, reglamentos, resoluciones, manuales) que
+# todavía no vio. Cada hora y no cada 5 min como el chequeo de notas: INTRALU
+# publica del orden de un anuncio por semana, y cada corrida cuesta un login
+# por usuario contra un sitio que ya se cae solo (ver
+# docs/superpowers/specs/2026-07-17-avisos-caida-intralu-design.md).
+#
+# Sin cancel-in-progress: si una corrida se pasa de la hora, la siguiente
+# espera en vez de matarla a mitad de mandar avisos.
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: check-anuncios
+  cancel-in-progress: false
+
+jobs:
+  check-anuncios:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.13.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run check-anuncios
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CREDENTIALS_ENCRYPTION_KEY: ${{ secrets.CREDENTIALS_ENCRYPTION_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        run: pnpm run check-anuncios

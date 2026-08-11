@@ -1,11 +1,17 @@
 # Descarga de fichas/documentos desde el bot
 
 **Fecha:** 2026-08-11
-**Estado:** Borrador — falta investigar la estructura real de
-`/informacion-academica/fichas` (requiere sesión logueada, ver
-"Investigación pendiente" más abajo) antes de poder pasar esto a un plan
-de implementación tarea por tarea, como se hizo con
-[`2026-07-17-avisos-caida-intralu-design.md`](2026-07-17-avisos-caida-intralu-design.md).
+**Planes de implementación:**
+[`2026-08-11-descarga-fichas.md`](../plans/2026-08-11-descarga-fichas.md)
+(comando `/fichas`) y
+[`2026-08-11-avisos-anuncios.md`](../plans/2026-08-11-avisos-anuncios.md)
+(avisos de anuncios + `/avisos`, nacido del hallazgo lateral de más abajo).
+
+**Estado:** Listo para plan — la estructura real de
+`/informacion-academica/fichas` ya se verificó contra el sitio con
+`pnpm run test-fichas` (ver "Investigación (resuelta)"), así que esto ya
+puede pasarse a un plan de implementación tarea por tarea, como se hizo
+con [`2026-07-17-avisos-caida-intralu-design.md`](2026-07-17-avisos-caida-intralu-design.md).
 
 ## Contexto y motivación
 
@@ -43,37 +49,53 @@ patrón.
   GitHub, etc.) — se traen y se mandan al chat, nada más. Ver
   "Decisiones de diseño" para el porqué.
 
-## Investigación pendiente (bloqueante)
+## Investigación (resuelta)
 
-La página requiere sesión iniciada, así que no la puedo inspeccionar yo
-directamente sin credenciales — y como ya se conversó, pasar la
-contraseña real de INTRALU por este chat rompería la misma regla de
-seguridad que el propio proyecto sigue en `/registrar` (nunca la
-contraseña como texto plano en la conversación, ver `docs/SECURITY.md`).
+Verificado el 2026-08-11 contra el sitio real con `pnpm run test-fichas`
+(`fichas-test.js`, corrido localmente con el `.env` de siempre — la
+contraseña nunca salió del disco, ver `docs/SECURITY.md`).
 
-El plan es que esto se investigue en tu máquina local, con tu `.env` real
-(que nunca sale de tu disco), el mismo patrón que ya usa
-`pnpm run test-login`. Lo que hace falta averiguar y volcar acá antes de
-poder escribir el plan de implementación:
+**La página es estática y trivial de scrapear.** Siete tarjetas, cada una
+con su título en `.card-title` y un `<a>` a un PDF. No hay POST, ni CSRF,
+ni JS: son links `GET` directos que solo necesitan la cookie de sesión.
 
-1. **Qué hay en la página**: ¿cuántos documentos, de qué tipo (ficha de
-   matrícula, constancia, historial académico, otros)? ¿La lista es fija
-   o cambia según el ciclo/situación del alumno?
-2. **Cómo se obtiene cada archivo**: ¿es un link directo a un `.pdf` (algo
-   como `<a href="/algo/generar-pdf?...">`), o hace falta un POST/JS que
-   dispare una descarga? Si hay un botón, inspeccionar con DevTools →
-   pestaña **Network** al hacer click y anotar URL, método y cualquier
-   token que mande (CSRF, `codper`, etc. — mismo tipo de dato que ya
-   se sacó para `lib/session.js` y `fetchEvaluaciones`).
-3. **Formato y tamaño aproximado** de los archivos (asumo PDF, pero
-   confirmar) — Telegram permite subir hasta 50 MB por documento vía
-   `sendDocument`, así que en principio no debería ser un problema, pero
-   vale confirmar que no son archivos gigantes.
-4. **Si hace falta re-loguearse** para cada archivo o si una sola sesión
-   (cookie) alcanza para traer varios documentos seguidos — afecta si
-   conviene traer todos de una vez o uno por uno bajo demanda.
+| Ficha | Ruta (bajo `/informacion-academica/`) | Resultado |
+| --- | --- | --- |
+| Ficha Datos Personales | `ficha-datos-pdf` | ✅ 189 KB |
+| Ficha Académica | `ficha-academica-pdf` | ✅ 88 KB |
+| Ficha Académica Depurada | `ficha-academica-depurada-pdf` | ✅ 82 KB |
+| Avance Curricular | `avance-curricular-pdf` | ✅ 85 KB |
+| Adeudos | `adeudo-academico-pdf` | ✅ 74 KB |
+| Constancia de Matrícula | `constancia-matricula-pdf` | ❌ 404 `{"message":""}` |
+| Constancia de Ingreso | `constancia-ingreso-pdf` | ❌ 500 `{"message":"Server Error"}` |
 
-## Diseño propuesto (a confirmar con lo anterior)
+Respuestas a lo que estaba abierto:
+
+1. **Qué hay**: 7 documentos, lista fija de tarjetas. **Pero 2 de los 7
+   no funcionan** — devuelven JSON de error con `Content-Type:
+   application/json`, no PDF. Según lo que se sabe hasta ahora están rotas
+   del lado de INTRALU para todos los alumnos, no es algo de una cuenta
+   puntual (se verificó directamente en una sola cuenta, el resto es
+   reporte de terceros). Como sea, **el bot tiene que tolerarlo**: no
+   asumir que un 200 implica PDF (ver "Cómo detectar una ficha rota"), y
+   decirle al usuario que la falla es de INTRALU y no de su cuenta.
+2. **Cómo se obtiene**: `GET` directo, sin token. Nada que replicar más
+   allá de reusar el cliente de `login()`.
+3. **Formato y tamaño**: `application/pdf`, 74–189 KB. Muy por debajo de
+   los 50 MB de `sendDocument` — no hace falta pensar en límites. Tardan
+   1.4–6.8 s cada uno (INTRALU los genera al vuelo).
+4. **Re-login**: no hace falta. Una sola sesión bajó los 5 PDFs seguidos
+   sin problema, así que traer todos de una corrida es gratis.
+
+### Cómo detectar una ficha rota
+
+Los dos casos que fallan mandan `Content-Type: application/json` con
+status 404/500. Con `validateStatus: () => true` (o un `try`), alcanza
+con chequear `res.status === 200` y que los primeros 4 bytes sean
+`%PDF` — un HTML de sesión expirada devuelto con 200 también quedaría
+descartado por esa segunda condición.
+
+## Diseño propuesto
 
 ### Por qué el login no puede vivir en la Edge Function
 
@@ -98,13 +120,40 @@ feature sigue el mismo patrón en vez de duplicar el login en Deno.
    (`lib/crypto.js`), hace `login()` (`lib/session.js`), entra a
    `/informacion-academica/fichas` y arma la lista de documentos
    disponibles.
-4. Si hay un solo documento (o pocos y chicos): los descarga todos con la
-   misma sesión ya logueada y los manda directo por Telegram
-   (`sendDocument`, subiendo los bytes — no un link, porque Telegram no
-   tiene la cookie de sesión de INTRALU para bajarlo solo).
-5. Si hay varios: en vez de mandar todo de una, ofrece botones (mismo
-   patrón `callback_query` que ya usa `/ciclos`) para elegir cuál
-   descargar, y cada botón dispara la descarga de ese archivo puntual.
+4. Descarga **todas** las fichas con la misma sesión ya logueada y las
+   manda por Telegram una por una (`sendDocument`, subiendo los bytes —
+   no un link, porque Telegram no tiene la cookie de sesión de INTRALU
+   para bajarlo solo). Son 5 PDFs de ~100 KB: no hay motivo para
+   preguntar cuál quiere.
+5. Cierra con un mensaje que liste las fichas que no pudo traer (las que
+   INTRALU devolvió rotas), para que el usuario no se quede esperando una
+   que nunca va a llegar.
+
+### Sin botones para elegir ficha (descartado)
+
+Un borrador anterior proponía ofrecer botones (`callback_query`, como
+`/ciclos`) para elegir qué ficha bajar. Se descartó al medir el costo
+real: el `callback_query` lo maneja la Edge Function, que **no puede
+loguearse** (ver arriba), así que cada botón tendría que disparar el
+workflow otra vez — checkout + `pnpm install` + login + generación del
+PDF, ~1 min por archivo. Todo eso para ahorrar mandar 5 adjuntos de
+~100 KB que Telegram entrega en segundos. Mandar todo de una es menos
+código, menos latencia y menos requests contra INTRALU.
+
+Vale la pena reconsiderarlo solo si en otra cuenta aparecen muchas más
+fichas, o mucho más pesadas, que en la que se probó.
+
+### Manejo de errores
+
+Mismo bloque `catch` que `fetch-historial.js` (líneas 87-105):
+`isNetworkError` → "INTRALU no responde", `CredentialError` → "revisa tu
+código y contraseña con /registrar", cualquier otra cosa → mensaje
+genérico; el `err.message` crudo queda solo en el log de Actions.
+
+Aparte de eso, y a diferencia de `/ciclos`, acá hay **fallas parciales**:
+una ficha puede venir rota (404/500, ver "Cómo detectar una ficha rota")
+sin que eso invalide las otras. Una ficha rota no aborta la corrida — se
+saltea, se sigue con las demás, y se nombra al final.
 
 ### Decisiones de diseño
 
@@ -132,14 +181,84 @@ feature sigue el mismo patrón en vez de duplicar el login en Deno.
   (`lib/session.js`, Node) — ver "Por qué el login no puede vivir en la
   Edge Function".
 
+## Piezas que hay que tocar (checklist para el plan)
+
+- `lib/session.js`: `fetchFichas(client)` (ya escrita y probada en
+  `fichas-test.js`, mover tal cual) + la descarga de un PDF con
+  `responseType: 'arraybuffer'` y `timeout` propio — **los 20 s fijos de
+  `newClient()` se quedan cortos**: la ficha más lenta tardó 6.8 s pero
+  INTRALU degradado puede pasarse. Se sobrescribe por request, no se toca
+  el timeout global.
+- `lib/notificaciones.js`: falta `sendDocument`. `sendTelegram` solo hace
+  `sendMessage` con JSON; los adjuntos van en `multipart/form-data`. Node
+  22 ya trae `FormData` y `Blob` globales, así que son ~8 líneas sin
+  dependencia nueva.
+- `fetch-fichas.js` nuevo + `descargar-fichas.yml` nuevo, calcados de
+  `fetch-historial.js` / `fetch-historial.yml`. El workflow necesita
+  `concurrency: group: descargar-fichas-${{ inputs.chat_id }}` o el mismo
+  usuario tocando `/fichas` dos veces dispara dos logins.
+- `package.json`: script `fetch-fichas`.
+- `telegram-webhook/index.ts`: comando `/fichas` + `dispararFichas()`
+  (copia de `dispararFetchHistorial`, líneas 135-155) + la línea en la
+  constante `AYUDA`. **No** hace falta tocar `manejarCallbackQuery`.
+- `README.md` / `CHANGELOG.md`: el proyecto documenta cada comando.
+
+Detalle heredado que conviene tener presente: `dispararFetchHistorial`
+hace `return` silencioso si falta `GITHUB_DISPATCH_TOKEN`, y el usuario
+se queda con el "🔎 Buscando..." para siempre. `/fichas` va a heredar lo
+mismo. No es de este spec arreglarlo, pero si se toca esa función,
+aprovechar.
+
 ## Testing
 
 Mismo criterio que el resto del proyecto (sin suite automatizada,
 `docs/superpowers/specs/2026-07-17-avisos-caida-intralu-design.md#testing`):
 verificación manual local con `.env` real, mismo patrón que
-`pnpm run test-login`. Cuando se investigue la estructura real de la
-página (sección anterior), el paso natural es un script de diagnóstico
-nuevo (`fichas-test.js`, análogo a `login-test.js`) que solo loguea y
-imprime lo que encuentra en `/informacion-academica/fichas`, sin tocar
-Supabase ni Telegram — para confirmar el scraping antes de conectarlo al
-resto del bot.
+`pnpm run test-login`.
+
+Ya existe `fichas-test.js` (`pnpm run test-fichas`): loguea, lista las
+fichas y baja cada PDF imprimiendo status, `Content-Type`, tamaño y
+tiempo, sin tocar Supabase ni Telegram. Es lo que produjo la tabla de
+"Investigación (resuelta)" y sirve para revalidar el scraping cada vez
+que INTRALU cambie el HTML.
+
+Existe también `explorar-test.js` (`pnpm run test-explorar`), que recorre
+el menú entero — el que encontró lo de los anuncios (abajo).
+
+## Hallazgo lateral: anuncios y documentos del home
+
+Explorando el resto del menú apareció algo que no estaba en el radar: la
+**home de INTRALU** (`/`) publica dos listas de archivos que hoy el bot
+ignora por completo.
+
+- **Anuncios**: timeline con título, texto, fecha y adjuntos. En la
+  cuenta de prueba: "HORARIO ENTREGA DE EXAMENES 2026-1" (27/07/2026,
+  `.docx`) y "ENCUESTA VIRTUAL" (04/07/2026, `.jpg`).
+- **Reglamentos y Resoluciones**: tres pestañas (Reglamentos,
+  Resoluciones, Manuales); solo la primera tenía contenido
+  ("REGLAMENTO MATRICULA", 07/02/2025, PDF de 2.7 MB).
+
+Ambas listas usan el mismo mecanismo: `<a class="btn-file"
+data-codanu="..." data-extension="...">`. El handler está en
+`/build/assets/home-*.js` y se reduce a un `GET` a
+**`/anuncio/download/{codanu}`** (o `/anuncio/view/{codanu}` para
+previsualizar). Probado con los tres `codanu` reales: los tres bajan
+200 con `Content-Disposition: attachment; filename="..."`, de donde sale
+el nombre de archivo tal cual para pasárselo a `sendDocument`.
+
+No hay página índice: `/anuncio`, `/anuncios` y `/anuncio/listar` dan
+404. La lista vive **solo en el HTML del home**, así que hay que
+scrapearla de ahí.
+
+**Esto da para un spec propio, no para meterlo acá**, porque el valor
+está en un modo distinto: a diferencia de las fichas (bajo demanda, no
+cambian), un anuncio nuevo es exactamente el tipo de cosa que el bot ya
+sabe hacer sola — `check-all-users.js` ya loguea a cada usuario cada 5
+min y ya tiene el patrón "comparar contra lo último visto y avisar solo
+si hay algo nuevo". Un `/anuncios` bajo demanda sería la mitad del
+feature; la otra mitad, avisar sin que te pidan nada, es la que vale.
+
+Dos cosas a confirmar antes de escribir ese spec: si la lista de
+anuncios es global (misma para todos) o por facultad/alumno, y cuántos
+anuncios muestra el home como máximo — con una sola cuenta no se puede
+saber.

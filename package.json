@@ -17,7 +17,8 @@
     "benchmark-concurrency": "node benchmark-concurrency.js",
     "check-all": "node check-all-users.js",
     "fetch-historial": "node fetch-historial.js",
-    "fetch-fichas": "node fetch-fichas.js"
+    "fetch-fichas": "node fetch-fichas.js",
+    "check-anuncios": "node check-anuncios.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.6",
