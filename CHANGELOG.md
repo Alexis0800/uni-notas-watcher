@@ -5,6 +5,29 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/),
 y este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 
+## [1.4.1] - 2026-08-17
+
+### Fixed
+
+- **Un rechazo de login de INTRALU ya no desactiva usuarios por sí solo.** El
+  2026-08-17 el sitio le contestó "Acercarse a admisión para actualizar sus
+  datos" a todo el mundo (un flag que debía apuntar solo a ingresantes) y el
+  watcher desactivó a los 3 usuarios activos en 3 minutos: el ciclo corto de
+  60s, que se activa cuando INTRALU está caído, acumuló los 3 rechazos a toda
+  velocidad. Ahora desactivar pide además que haga más de 48h que no se logra
+  entrar (`MIN_FAILURE_WINDOW_MS`), y no se desactiva a nadie en una corrida
+  donde INTRALU rechazó a todos y no dejó entrar a nadie
+  (`esRechazoSistemico`). Ninguna de las dos señales mira el texto del
+  mensaje de error, que la universidad puede cambiar cuando quiera. La ventana
+  de 48h no necesitó columna nueva: `updated_at` ya es la fecha del último
+  chequeo que entró bien.
+- **Un rechazo de login ahora marca INTRALU como en pie.** El sitio contestó,
+  así que está respondiendo aunque no deje entrar. Sin esto, una tanda entera
+  de rechazos dejaba `is_down=true` colgado y `check-grade.yml` se quedaba
+  encadenando corridas cada 60s indefinidamente — que es justo lo que pasó
+  cuando los 3 usuarios quedaron desactivados y no quedó nadie que pudiera
+  loguearse para limpiar el estado.
+
 ## [1.4.0] - 2026-08-11
 
 ### Added

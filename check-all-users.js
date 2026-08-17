@@ -9,6 +9,19 @@ const fs = require('fs');
 const CONCURRENCY = Number(process.env.CONCURRENCY) || 15;
 const FAILURE_THRESHOLD = 3;
 
+// Que INTRALU rechace un login NO prueba que la contraseña esté mal. El
+// 2026-08-17 el sitio le contestó "Acercarse a admisión para actualizar sus
+// datos" a todo el mundo — un flag que debía apuntar solo a ingresantes — y
+// el watcher desactivó a todos sus usuarios en 3 minutos. Mirar el texto del
+// mensaje no sirve de defensa: la universidad lo cambia cuando quiere.
+//
+// Lo que sí separa un caso del otro es el tiempo. Una contraseña mala no se
+// arregla sola; un desperfecto del sitio sí. 48h cubre de sobra cualquier
+// desperfecto (el de ese día duró ~2h) incluido uno que empiece un viernes a
+// la noche y no lo toque nadie hasta el lunes. El costo de esperar es solo
+// que a quien de verdad cambió su contraseña se le avisa al segundo día.
+const MIN_FAILURE_WINDOW_MS = 48 * 60 * 60 * 1000;
+
 // Medido desde corridas reales de GitHub Actions (no desde una máquina
 // local — la ruta de red hacia alumnos.uni.edu.pe es más lenta desde ahí):
 // 26-32s por usuario en 5 corridas con 1 solo usuario activo, ver
@@ -43,6 +56,28 @@ function botonRegistrar() {
   return {
     inline_keyboard: [[{ text: '📝 Registrarme', web_app: { url: REGISTRO_WEBAPP_URL } }]],
   };
+}
+
+// Un rechazo de login es del sitio, y no de las credenciales, si en toda la
+// corrida NADIE pudo entrar. Pide al menos 2 rechazados porque con un solo
+// usuario activo "no entró nadie" es exactamente lo mismo que "su contraseña
+// está mal" — ahí la única señal que queda es el tiempo (debeDesactivar).
+function esRechazoSistemico(rechazados, loginsOk) {
+  return loginsOk === 0 && rechazados >= 2;
+}
+
+// Desactivar pide las dos cosas: varios rechazos seguidos Y que haga rato
+// que no se logra entrar. Lo segundo es lo que evita que un desperfecto del
+// sitio se lleve puestos a los usuarios (ver MIN_FAILURE_WINDOW_MS): el
+// 2026-08-17 los 3 rechazos entraron en 3 minutos porque el ciclo corto de
+// 60s los acumuló a toda velocidad.
+//
+// `ultimoExito` es el updated_at del usuario, que ya significa exactamente
+// eso: solo lo toca el chequeo que entró bien (para alguien que nunca entró,
+// es su fecha de registro). Por eso esto no necesita columna nueva.
+function debeDesactivar(failures, ultimoExito, ahora = Date.now()) {
+  if (failures < FAILURE_THRESHOLD || !ultimoExito) return false;
+  return ahora - new Date(ultimoExito).getTime() >= MIN_FAILURE_WINDOW_MS;
 }
 
 async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
@@ -135,6 +170,7 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
     await markIntraluUp(supabase, telegramToken, process.env.ADMIN_CHAT_ID);
 
     console.log(`✅ ${chat_id} (${codigo_uni}): ${seeded ? `${cambios.length} nota(s) nueva(s)` : 'snapshot inicial enviado'}`);
+    return 'ok';
   } catch (err) {
     if (isNetworkError(err)) {
       // INTRALU inalcanzable (ECONNREFUSED, timeout, DNS) — no es culpa del
@@ -168,7 +204,7 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
           ).catch(() => {});
         }
       }
-      return;
+      return null;
     }
 
     if (!(err instanceof CredentialError)) {
@@ -176,23 +212,56 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
       // credenciales ni de red, así que no cuenta hacia la desactivación. El
       // cron siguiente lo reintenta solo (ver comentario sobre la cola en main()).
       console.error(`⏳ ${chat_id} (${codigo_uni}): ${err.message}`);
-      return;
+      return null;
     }
 
-    const failures = (usuario.consecutive_failures || 0) + 1;
+    // El sitio contestó (nos redirigió a /login), así que está en pie aunque
+    // no nos deje entrar. Sin esto, una tanda entera de rechazos deja
+    // is_down=true colgado y check-grade.yml se queda encadenando corridas
+    // cada 60s para siempre. Los rechazos no se resuelven acá: recién al
+    // final de la corrida se sabe si fueron de las credenciales o del sitio.
+    await markIntraluUp(supabase, telegramToken, process.env.ADMIN_CHAT_ID);
     console.error(`❌ ${chat_id} (${codigo_uni}): ${err.message}`);
+    return 'rechazado';
+  }
+}
 
-    if (failures >= FAILURE_THRESHOLD) {
+// Resuelve los logins que INTRALU rechazó, una vez que terminó toda la
+// corrida y se sabe si alguien más sí pudo entrar.
+async function aplicarStrikes(supabase, telegramToken, resultados) {
+  const rechazados = resultados.filter((r) => r.resultado === 'rechazado');
+  if (rechazados.length === 0) return;
+
+  const loginsOk = resultados.filter((r) => r.resultado === 'ok').length;
+  const sistemico = esRechazoSistemico(rechazados.length, loginsOk);
+  if (sistemico) {
+    // ponytail: solo queda en el log. Si esto se repite corrida tras
+    // corrida durante días, es que INTRALU invalidó las credenciales de
+    // todos en serio y hay que ir a mirar — avisar al admin sin spamear
+    // cada 5 min pide otra máquina de estados como la de service_status.
+    console.error(
+      `🟠 INTRALU rechazó a los ${rechazados.length} usuario(s) revisados y no dejó entrar a nadie: parece un problema del sitio, no de sus credenciales. No se desactiva a nadie.`,
+    );
+  }
+
+  const ahora = Date.now();
+  for (const { usuario } of rechazados) {
+    const failures = (usuario.consecutive_failures || 0) + 1;
+    const desactivar = !sistemico && debeDesactivar(failures, usuario.updated_at, ahora);
+
+    if (desactivar) {
       await sendTelegram(
         telegramToken,
-        chat_id,
-        '⚠️ No pude iniciar sesión en INTRALU con tus credenciales varias veces seguidas. Te desactivé del watcher — usa /registrar para volver a intentarlo.',
+        usuario.chat_id,
+        '⚠️ Llevo dos días sin poder iniciar sesión en INTRALU con tus credenciales. Te desactivé del watcher — si cambiaste tu contraseña, usa /registrar para volver a activarlo.',
         botonRegistrar(),
       ).catch(() => {});
-      await supabase.from('usuarios').update({ active: false, consecutive_failures: failures }).eq('id', id);
-    } else {
-      await supabase.from('usuarios').update({ consecutive_failures: failures }).eq('id', id);
     }
+
+    await supabase
+      .from('usuarios')
+      .update({ consecutive_failures: failures, ...(desactivar ? { active: false } : {}) })
+      .eq('id', usuario.id);
   }
 }
 
@@ -236,10 +305,14 @@ async function main() {
   );
 
   const start = Date.now();
+  const resultados = [];
   for (let i = 0; i < usuarios.length; i += CONCURRENCY) {
     const batch = usuarios.slice(i, i + CONCURRENCY);
-    await Promise.all(batch.map((u) => checkUser(supabase, TELEGRAM_TOKEN, CREDENTIALS_ENCRYPTION_KEY, u)));
+    const res = await Promise.all(batch.map((u) => checkUser(supabase, TELEGRAM_TOKEN, CREDENTIALS_ENCRYPTION_KEY, u)));
+    resultados.push(...res.map((resultado, j) => ({ usuario: batch[j], resultado })));
   }
+
+  await aplicarStrikes(supabase, TELEGRAM_TOKEN, resultados);
 
   // Tiempo real por usuario de esta corrida — para poder recalibrar
   // SECONDS_PER_USER/RUN_WINDOW_SECONDS con datos reales según crezca la
@@ -262,7 +335,13 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('❌', err.message);
-  process.exit(1);
-});
+module.exports = { esRechazoSistemico, debeDesactivar, FAILURE_THRESHOLD, MIN_FAILURE_WINDOW_MS };
+
+// Solo corre si lo invocan directo, no cuando test/desactivacion.test.js lo
+// importa para probar las funciones puras.
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('❌', err.message);
+    process.exit(1);
+  });
+}
