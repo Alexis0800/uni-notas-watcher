@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
-const { login, fetchFichas, descargarFicha, CredentialError, isNetworkError } = require('./lib/session');
+const { login, fetchFichas, descargarFicha, CredentialError, CaptchaError, isNetworkError } = require('./lib/session');
 const { decrypt } = require('./lib/crypto');
 const { sendTelegram, sendDocument } = require('./lib/notificaciones');
 
@@ -95,6 +95,8 @@ async function main() {
     let mensaje;
     if (isNetworkError(err)) {
       mensaje = '❌ No pude conectarme a INTRALU para traer esa ficha — el sitio no está respondiendo en este momento. Intenta de nuevo más tarde.';
+    } else if (err instanceof CaptchaError) {
+      mensaje = '❌ INTRALU está pidiendo un reCAPTCHA para iniciar sesión y por ahora no puedo pasarlo, así que no pude traer esa ficha. No es un problema de tu contraseña.';
     } else if (err instanceof CredentialError) {
       mensaje = '❌ No pude iniciar sesión en INTRALU para traer esa ficha. Revisa tu código y contraseña con /registrar.';
     } else {

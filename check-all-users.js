@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
-const { login, fetchCursosMatriculados, fetchEvaluaciones, formatearNota, CredentialError, isNetworkError } = require('./lib/session');
+const { login, fetchCursosMatriculados, fetchEvaluaciones, formatearNota, CredentialError, CaptchaError, isNetworkError } = require('./lib/session');
 const { decrypt } = require('./lib/crypto');
 const { sendTelegram, agruparPorCurso } = require('./lib/notificaciones');
 const { markIntraluDown, markIntraluUp, isIntraluDown } = require('./lib/service-status');
@@ -78,6 +78,27 @@ function esRechazoSistemico(rechazados, loginsOk) {
 function debeDesactivar(failures, ultimoExito, ahora = Date.now()) {
   if (failures < FAILURE_THRESHOLD || !ultimoExito) return false;
   return ahora - new Date(ultimoExito).getTime() >= MIN_FAILURE_WINDOW_MS;
+}
+
+// Manda `texto` a un usuario recién registrado una sola vez por problema.
+//
+// Update atómico como filtro de carrera (mismo patrón que
+// markIntraluDown/markIntraluUp): check-grade.yml y
+// check-new-registration.yml corren en concurrency groups separados, así
+// que pueden revisar al mismo usuario nuevo casi simultáneamente. Solo la
+// corrida cuyo UPDATE efectivamente cambió la fila (data no vacío) manda el
+// mensaje — la otra ve 0 filas y no avisa dos veces. El flag se limpia en
+// el primer chequeo que entra bien.
+async function avisarUnaVez(supabase, telegramToken, usuario, texto) {
+  const { data } = await supabase
+    .from('usuarios')
+    .update({ network_issue_notified: true })
+    .eq('id', usuario.id)
+    .eq('network_issue_notified', false)
+    .select();
+  if (data && data.length > 0) {
+    await sendTelegram(telegramToken, usuario.chat_id, texto).catch(() => {});
+  }
 }
 
 async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
@@ -183,26 +204,31 @@ async function checkUser(supabase, telegramToken, encryptionKey, usuario) {
       await markIntraluDown(supabase, telegramToken, process.env.ADMIN_CHAT_ID);
 
       if (!seeded) {
-        // Update atómico como filtro de carrera (mismo patrón que
-        // markIntraluDown/markIntraluUp): check-grade.yml y
-        // check-new-registration.yml corren en concurrency groups
-        // separados, así que pueden revisar al mismo usuario nuevo casi
-        // simultáneamente. Solo la corrida cuyo UPDATE efectivamente
-        // cambió la fila (data no vacío) manda el mensaje — la otra ve
-        // 0 filas y no avisa dos veces.
-        const { data } = await supabase
-          .from('usuarios')
-          .update({ network_issue_notified: true })
-          .eq('id', id)
-          .eq('network_issue_notified', false)
-          .select();
-        if (data && data.length > 0) {
-          await sendTelegram(
-            telegramToken,
-            chat_id,
-            '⏳ INTRALU no está respondiendo en este momento (a veces tarda horas en normalizarse). Te aviso apenas pueda revisar tus notas — no hace falta que hagas nada.',
-          ).catch(() => {});
-        }
+        await avisarUnaVez(
+          supabase,
+          telegramToken,
+          usuario,
+          '⏳ INTRALU no está respondiendo en este momento (a veces tarda horas en normalizarse). Te aviso apenas pueda revisar tus notas — no hace falta que hagas nada.',
+        );
+      }
+      return null;
+    }
+
+    if (err instanceof CaptchaError) {
+      // INTRALU contestó pero no nos deja pasar sin reCAPTCHA. No es culpa
+      // del usuario, así que no cuenta hacia la desactivación. Tampoco es
+      // una caída: markIntraluDown pondría el ciclo corto de 60s y no
+      // arregla nada. Al recién registrado se le avisa una vez, porque si
+      // no se queda esperando un snapshot que nunca llega.
+      await markIntraluUp(supabase, telegramToken, process.env.ADMIN_CHAT_ID);
+      console.error(`🤖 ${chat_id} (${codigo_uni}): ${err.message}`);
+      if (!seeded) {
+        await avisarUnaVez(
+          supabase,
+          telegramToken,
+          usuario,
+          '🤖 Tu registro quedó guardado, pero INTRALU está pidiendo un reCAPTCHA para iniciar sesión y por ahora no puedo pasarlo. No es un problema de tu contraseña — te aviso apenas pueda revisar tus notas.',
+        );
       }
       return null;
     }

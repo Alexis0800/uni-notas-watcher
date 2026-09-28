@@ -5,6 +5,22 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/),
 y este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Un login bloqueado por reCAPTCHA ya no cuenta como contraseña mala.**
+  Desde el 2026-09-28 INTRALU contesta "Por favor complete el reCAPTCHA" a
+  todos los logins del watcher. Antes eso se trataba como credenciales
+  rechazadas (strikes y, a las 48h, desactivación). Ahora es un
+  `CaptchaError` aparte: no suma strikes, y al recién registrado se le avisa
+  una vez en vez de dejarlo esperando un snapshot que nunca llega.
+  `/ciclos` y `/fichas` también le explican el motivo real.
+- **El registro valida el código de alumno** (solo letras y números), en el
+  formulario y en `/registrar`, en vez de guardarlo y fallar recién en el
+  primer chequeo.
+- Workflows pasan a `actions/checkout@v5` y `actions/setup-node@v5` (Node 24).
+
 ## [1.4.1] - 2026-08-17
 
 ### Fixed

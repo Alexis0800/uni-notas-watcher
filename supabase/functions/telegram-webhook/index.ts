@@ -478,6 +478,9 @@ Deno.serve(async (req) => {
         'Toca el botón para registrarte con un formulario (recomendado), o escribe:\n/registrar CODIGO CONTRASEÑA',
         botonRegistrar(),
       );
+    } else if (!/^[A-Za-z0-9]{6,12}$/.test(codigo)) {
+      // INTRALU solo acepta letras y números (ej. 20182103J).
+      await sendMessage(chatId, 'El código solo puede tener letras y números, ej. 20182103J.', botonRegistrar());
     } else {
       const passwordEncrypted = await encrypt(password, ENCRYPTION_KEY);
       const { error } = await supabase.from('usuarios').upsert(
