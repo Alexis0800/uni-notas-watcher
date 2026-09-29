@@ -7,6 +7,15 @@ y este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Added
+
+- **Login con navegador cuando INTRALU exige el reCAPTCHA.** El reCAPTCHA
+  del login es v3 (invisible, no hay casilla): la página genera el token
+  sola al enviar el form. Si el login por HTTP es rechazado por reCAPTCHA,
+  `login()` lo repite con Chrome headless (`playwright-core`, usando el
+  Chrome que ya trae el runner de GitHub) y copia las cookies de sesión al
+  cliente axios de siempre.
+
 ### Fixed
 
 - **Un login bloqueado por reCAPTCHA ya no cuenta como contraseña mala.**
