@@ -1,0 +1,40 @@
+name: Reactivar usuarios
+
+# Solo manual (Actions → Reactivar usuarios → Run workflow). Cuenta los
+# usuarios y reactiva a los que el watcher desactivó — ver
+# reactivar-usuarios.js. Con "solo contar" no cambia nada.
+
+on:
+  workflow_dispatch:
+    inputs:
+      solo_contar:
+        description: 'Solo contar usuarios, sin reactivar a nadie'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  reactivar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.13.0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Reactivar usuarios
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SOLO_CONTAR: ${{ github.event.inputs.solo_contar }}
+        run: node reactivar-usuarios.js
