@@ -18,6 +18,15 @@ y este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Fixed
 
+- **Los chequeos ya no se bloquean entre sí por el límite de logins de
+  INTRALU.** El sitio acepta 5 intentos de login por IP y después contesta
+  429 "Demasiados intentos" por ~90s. El 2026-09-29, con 4 usuarios
+  activos, cada corrida gastaba 8 intentos de golpe (HTTP + navegador por
+  usuario, todos en paralelo) y no entraba nadie. Ahora `login()` va de a
+  uno, salta el intento por HTTP una vez visto el reCAPTCHA y, tras un 429
+  (`RateLimitError`, no suma strikes), no sigue intentando hasta que pase
+  el `Retry-After`. Además un 429 en el login por HTTP ya no se toma por
+  login exitoso.
 - **Un login bloqueado por reCAPTCHA ya no cuenta como contraseña mala.**
   Desde el 2026-09-28 INTRALU contesta "Por favor complete el reCAPTCHA" a
   todos los logins del watcher. Antes eso se trataba como credenciales

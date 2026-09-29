@@ -191,6 +191,19 @@ queda como una hipótesis razonable, no un hecho medido, hasta que haya
 más usuarios reales y los logs de `main()` lo confirmen o lo
 contradigan.
 
+**Actualización 2026-09-29: ahora el techo es el login, no la
+concurrencia.** INTRALU limita a **5 POST a `/login` por IP** y al
+pasarse contesta 429 "Demasiados intentos" por ~90s (headers
+`x-ratelimit-limit: 5`, `retry-after: 90`). Cuenta los intentos de
+todas las cuentas juntas: ese día, 4 usuarios *distintos* logueando en
+paralelo (8 intentos, HTTP + navegador cada uno) quedaron todos afuera
+durante horas. Desde entonces `login()` en `lib/session.js` va de a uno
+por proceso y gasta un solo intento por usuario, así que entran **~4
+usuarios por corrida**; el resto queda primero en la cola de la
+siguiente. Subir `CONCURRENCY` ya no cambia esto. Para pasar de ahí hay
+que loguear menos (reusar la cookie de sesión, que dura 2h), no más
+rápido.
+
 ### Hallazgo: el `schedule` de GitHub Actions no dispara cada 5 minutos
 
 Revisando las corridas reales vía la API de GitHub Actions, el
