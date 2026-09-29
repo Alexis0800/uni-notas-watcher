@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
-const { login, fetchCursosMatriculados, fetchEvaluaciones, formatearNota, CredentialError, isNetworkError } = require('./lib/session');
+const { login, fetchCursosMatriculados, fetchEvaluaciones, formatearNota, CredentialError, CaptchaError, isNetworkError } = require('./lib/session');
 const { decrypt } = require('./lib/crypto');
 const { sendTelegram, agruparPorCurso, etiquetaPeriodo } = require('./lib/notificaciones');
 
@@ -94,6 +94,8 @@ async function main() {
     let mensaje;
     if (isNetworkError(err)) {
       mensaje = `❌ No pude conectarme a INTRALU para revisar el ciclo ${etiqueta} — el sitio no está respondiendo en este momento. Intenta de nuevo más tarde.`;
+    } else if (err instanceof CaptchaError) {
+      mensaje = `❌ INTRALU está pidiendo un reCAPTCHA para iniciar sesión y por ahora no puedo pasarlo, así que no pude revisar el ciclo ${etiqueta}. No es un problema de tu contraseña.`;
     } else if (err instanceof CredentialError) {
       mensaje = `❌ No pude iniciar sesión en INTRALU para revisar el ciclo ${etiqueta}. Revisa tu código y contraseña con /registrar.`;
     } else {

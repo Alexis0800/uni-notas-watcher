@@ -78,6 +78,11 @@ Deno.serve(async (req) => {
   if (!codigo || !password || !initData) {
     return json({ ok: false, error: 'Faltan campos' }, 400);
   }
+  // INTRALU solo acepta letras y números (ej. 20182103J). Sin esto el
+  // registro "salía bien" y el error recién aparecía en el primer chequeo.
+  if (!/^[A-Za-z0-9]{6,12}$/.test(codigo)) {
+    return json({ ok: false, error: 'El código solo puede tener letras y números, ej. 20182103J.' }, 400);
+  }
 
   const verificacion = await verifyInitData(initData, TELEGRAM_TOKEN);
   if (!verificacion.ok) {

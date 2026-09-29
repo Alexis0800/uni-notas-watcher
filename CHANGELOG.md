@@ -5,6 +5,31 @@ Todos los cambios notables de este proyecto se documentan en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/),
 y este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 
+## [Unreleased]
+
+### Added
+
+- **Login con navegador cuando INTRALU exige el reCAPTCHA.** El reCAPTCHA
+  del login es v3 (invisible, no hay casilla): la página genera el token
+  sola al enviar el form. Si el login por HTTP es rechazado por reCAPTCHA,
+  `login()` lo repite con Chrome headless (`playwright-core`, usando el
+  Chrome que ya trae el runner de GitHub) y copia las cookies de sesión al
+  cliente axios de siempre.
+
+### Fixed
+
+- **Un login bloqueado por reCAPTCHA ya no cuenta como contraseña mala.**
+  Desde el 2026-09-28 INTRALU contesta "Por favor complete el reCAPTCHA" a
+  todos los logins del watcher. Antes eso se trataba como credenciales
+  rechazadas (strikes y, a las 48h, desactivación). Ahora es un
+  `CaptchaError` aparte: no suma strikes, y al recién registrado se le avisa
+  una vez en vez de dejarlo esperando un snapshot que nunca llega.
+  `/ciclos` y `/fichas` también le explican el motivo real.
+- **El registro valida el código de alumno** (solo letras y números), en el
+  formulario y en `/registrar`, en vez de guardarlo y fallar recién en el
+  primer chequeo.
+- Workflows pasan a `actions/checkout@v5` y `actions/setup-node@v5` (Node 24).
+
 ## [1.4.1] - 2026-08-17
 
 ### Fixed

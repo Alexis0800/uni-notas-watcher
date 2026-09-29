@@ -87,7 +87,7 @@ jobs:
         if: steps.guard.outputs.saltar != 'true'
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.guard.outputs.saltar != 'true'
 
       - uses: pnpm/action-setup@v4
@@ -95,7 +95,7 @@ jobs:
         with:
           version: 11.13.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.guard.outputs.saltar != 'true'
         with:
           node-version: 22
